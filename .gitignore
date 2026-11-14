@@ -1,0 +1,14 @@
+node_modules
+.next
+data
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+eval/*.mp4
+eval/*.mov
+.DS_Store
+.env*.local
+eval/*.MOV
+eval/*.m4v
+eval/*.webm
