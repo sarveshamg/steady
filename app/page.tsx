@@ -1,20 +1,80 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Resident } from "@/lib/schema";
 import { DEFAULT_RESIDENT, ResidentForm } from "@/components/ResidentForm";
-import { CheckIcon } from "@/components/icons";
+import { CheckIcon, ImageIcon, XIcon } from "@/components/icons";
 import { StairsIllustration } from "@/components/StairsIllustration";
 import { Hero } from "@/components/Hero";
 import { HowItWorks } from "@/components/HowItWorks";
 import { useReveal } from "@/hooks/useReveal";
 import { Button, Panel, TextInput, buttonClass } from "@/components/ui";
 
+const MAX_PHOTOS = 10;
+const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+type Photo = { file: File; url: string; key: string };
+
 export default function UploadPage() {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  // Thumbnails use object URLs: free them when photos are removed and when the page unmounts.
+  const photosRef = useRef<Photo[]>([]);
+  photosRef.current = photos;
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
+
+  /** One video OR 1–10 photos (never both). Video handling is unchanged; photos are checked here and on the server. */
+  function addFiles(list: File[]) {
+    setPickError(null);
+    if (list.length === 0) return;
+    const videos = list.filter((f) => f.type.startsWith("video/"));
+    const images = list.filter((f) => !f.type.startsWith("video/"));
+    if (videos.length > 0 && (images.length > 0 || photos.length > 0)) {
+      setPickError("Use either one video or photos, not both.");
+      return;
+    }
+    if (videos.length > 1) {
+      setPickError("Choose one video.");
+      return;
+    }
+    if (videos.length === 1) {
+      setFile(videos[0]);
+      return;
+    }
+    if (file) {
+      setPickError("Use either one video or photos, not both.");
+      return;
+    }
+    const problems: string[] = [];
+    const ok: File[] = [];
+    for (const f of images) {
+      if (/image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name)) problems.push("HEIC photos aren't supported. Please use JPG or PNG.");
+      else if (!/^image\/(jpeg|png|webp)$/i.test(f.type) && !/\.(jpe?g|png|webp)$/i.test(f.name)) problems.push("Please use JPG, PNG or WebP photos.");
+      else if (f.size > MAX_PHOTO_BYTES) problems.push(`“${f.name}” is over 15 MB.`);
+      else ok.push(f);
+    }
+    const room = MAX_PHOTOS - photos.length;
+    if (ok.length > room) problems.push(`Up to ${MAX_PHOTOS} photos. ${ok.length - room} weren't added.`);
+    const added = ok.slice(0, Math.max(0, room)).map((f) => ({ file: f, url: URL.createObjectURL(f), key: `${f.name}-${f.size}-${f.lastModified}-${Math.random()}` }));
+    if (added.length) setPhotos((p) => [...p, ...added]);
+    if (problems.length) setPickError([...new Set(problems)].join(" "));
+  }
+
+  function removePhoto(key: string) {
+    setPickError(null);
+    setPhotos((p) => {
+      const gone = p.find((x) => x.key === key);
+      if (gone) URL.revokeObjectURL(gone.url);
+      return p.filter((x) => x.key !== key);
+    });
+  }
+
+  const ready = !!file || photos.length > 0;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -34,12 +94,13 @@ export default function UploadPage() {
   }
 
   async function submit() {
-    if (!file) return;
+    if (!ready) return;
     setBusy(true);
     setError(null);
     try {
       const body = new FormData();
-      body.append("video", file);
+      if (file) body.append("video", file);
+      else photos.forEach((p) => body.append("photos", p.file));
       body.append("resident", JSON.stringify(resident));
       if (location.trim()) body.append("location", location.trim());
       const res = await fetch("/api/upload", { method: "POST", body });
@@ -90,7 +151,7 @@ export default function UploadPage() {
             </div>
           </Step>
 
-          <Step n={3} title="Add a walkthrough video" titleId="step-video">
+          <Step n={3} title="Add a walkthrough video or photos" titleId="step-video">
             <div className="space-y-2">
               <div
                 role="group"
@@ -103,11 +164,10 @@ export default function UploadPage() {
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragging(false);
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) setFile(f);
+                  addFiles(Array.from(e.dataTransfer.files ?? []));
                 }}
                 className={`flex flex-col items-center gap-4 rounded-lg border border-dashed p-6 text-center transition-colors duration-150 ${
-                  dragging ? "border-primary bg-primary-soft" : file ? "border-success bg-success-soft" : "border-line-strong bg-page"
+                  dragging ? "border-primary bg-primary-soft" : ready ? "border-success bg-success-soft" : "border-line-strong bg-page"
                 }`}
               >
                 <input
@@ -116,9 +176,23 @@ export default function UploadPage() {
                   accept="video/*"
                   capture="environment"
                   className="hidden"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    addFiles(Array.from(e.target.files ?? []).slice(0, 1));
+                    e.target.value = "";
+                  }}
                 />
-                {file ? (
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    addFiles(Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                  }}
+                />
+                {ready ? (
                   <span className="grid h-12 w-12 place-content-center rounded-full bg-success text-on-primary" aria-hidden>
                     <CheckIcon className="h-6 w-6" />
                   </span>
@@ -126,16 +200,93 @@ export default function UploadPage() {
                   <StairsIllustration />
                 )}
                 <div>
-                  <p className="font-semibold">{file ? file.name : "Drop a video here, or record one on your phone"}</p>
+                  <p className="font-semibold">
+                    {file
+                      ? file.name
+                      : photos.length > 0
+                        ? `${photos.length} ${photos.length === 1 ? "photo" : "photos"}`
+                        : "Drop a video or photos here"}
+                  </p>
                   <p className="text-sm text-muted tabular-nums">
-                    {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Under a minute. Keep people out of the shot."}
+                    {file
+                      ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+                      : "One video, or up to 10 photos — one or two per room."}
                   </p>
                 </div>
-                <Button variant="secondary" onClick={() => input.current?.click()} disabled={busy}>
-                  {file ? "Choose another" : "Choose or record"}
-                </Button>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {photos.length === 0 && (
+                    <Button variant="secondary" onClick={() => input.current?.click()} disabled={busy}>
+                      {file ? "Choose another video" : "Choose or record video"}
+                    </Button>
+                  )}
+                  {!file && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => photoInput.current?.click()}
+                      disabled={busy || photos.length >= MAX_PHOTOS}
+                    >
+                      <ImageIcon />
+                      {photos.length > 0 ? "Add more photos" : "Add photos"}
+                    </Button>
+                  )}
+                  {(file || photos.length > 0) && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setFile(null);
+                        photos.forEach((p) => URL.revokeObjectURL(p.url));
+                        setPhotos([]);
+                        setPickError(null);
+                      }}
+                      disabled={busy}
+                    >
+                      Start over
+                    </Button>
+                  )}
+                </div>
               </div>
-              <p className="text-sm text-muted">Walk slowly. Show floors, stairs and anything you hold onto.</p>
+
+              {pickError && (
+                <p className="rounded-md bg-urgent-soft px-3 py-2 text-sm font-medium text-urgent" role="alert">
+                  {pickError}
+                </p>
+              )}
+
+              {photos.length > 0 && (
+                <div className="space-y-2">
+                  <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5" aria-label={`${photos.length} photos added`}>
+                    {photos.map((p, i) => (
+                      <li key={p.key} className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={p.url}
+                          alt={`Photo ${i + 1}`}
+                          className="aspect-square w-full rounded-md border border-line bg-line object-cover"
+                        />
+                        <span className="absolute bottom-1 left-1 rounded-sm bg-ink/75 px-1 text-sm font-semibold text-white tabular-nums" aria-hidden>
+                          {i + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(p.key)}
+                          disabled={busy}
+                          aria-label={`Remove photo ${i + 1}`}
+                          className="press absolute -right-2 -top-2 grid h-11 w-11 place-content-center rounded-full"
+                        >
+                          <span className="grid h-7 w-7 place-content-center rounded-full border border-line bg-surface text-ink shadow-float">
+                            <XIcon className="h-4 w-4" />
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-sm text-muted">Tip: add close-ups of anything that looks worn, cracked, stained or loose.</p>
+                </div>
+              )}
+
+              {!photos.length && (
+                <p className="text-sm text-muted">Walk slowly. Show floors, stairs and anything you hold onto.</p>
+              )}
             </div>
           </Step>
         </ol>
@@ -144,15 +295,15 @@ export default function UploadPage() {
           <button
             type="button"
             onClick={submit}
-            disabled={!file || busy}
+            disabled={!ready || busy}
             className={buttonClass("primary", "lg", true)}
-            aria-describedby={!file ? "check-hint" : undefined}
+            aria-describedby={!ready ? "check-hint" : undefined}
           >
-            {busy ? "Preparing video…" : "Check this home"}
+            {busy ? (photos.length ? "Preparing photos…" : "Preparing video…") : "Check this home"}
           </button>
-          {!file && (
+          {!ready && (
             <p id="check-hint" className="text-sm text-muted">
-              Add a video to continue.
+              Add a video or photos to continue.
             </p>
           )}
           {error && (

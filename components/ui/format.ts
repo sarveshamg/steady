@@ -86,3 +86,18 @@ export function findingsHeadline(hazards: Array<Pick<Hazard, "priority">>): stri
   const urgent = hazards.filter((h) => h.priority === "urgent").length;
   return `${plural(n, "thing")} to fix${urgent > 0 ? ` · ${urgent} urgent` : ""}`;
 }
+
+type SourceLike = { type: string; count?: number; secondsPerPhoto?: number };
+
+/** Photo number (1-based) for a timestamp in a photo slideshow: floor(t / s) + 1, capped at the photo count. */
+export function photoNumber(t: number, secondsPerPhoto: number, count: number): number {
+  return Math.min(count, Math.max(1, Math.floor(t / secondsPerPhoto) + 1));
+}
+
+/** "Photo 5" for photo reports, "0:12" for video reports. */
+export function whenLabel(source: SourceLike | null | undefined, t: number): string {
+  if (source?.type === "photos" && source.count && source.secondsPerPhoto) {
+    return `Photo ${photoNumber(t, source.secondsPerPhoto, source.count)}`;
+  }
+  return fmtTime(t);
+}

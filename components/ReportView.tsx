@@ -24,6 +24,7 @@ import {
   fmtRange,
   fmtTime,
   plural,
+  whenLabel,
   postJson,
   prefersReducedMotion,
 } from "./ui";
@@ -356,7 +357,11 @@ export function ReportView({ id }: { id: string }) {
                 ref={video}
                 src={`/api/video/${id}`}
                 playsInline
-                onClick={(e) => (e.currentTarget.paused ? e.currentTarget.play().catch(() => {}) : e.currentTarget.pause())}
+                onClick={(e) => {
+                  if (report.source.type === "photos") return; // photo reports: a still-frame viewer, no playback
+                  if (e.currentTarget.paused) e.currentTarget.play().catch(() => {});
+                  else e.currentTarget.pause();
+                }}
                 className="aspect-video w-full cursor-pointer rounded-md bg-ink"
                 onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || report?.duration_s || 0)}
                 onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
@@ -364,7 +369,7 @@ export function ReportView({ id }: { id: string }) {
             ) : (
               <div className="aspect-video w-full rounded-md bg-line" aria-hidden />
             )}
-            {report && report.source.type !== "youtube" && <VideoControls video={video} />}
+            {report && report.source.type === "upload" && <VideoControls video={video} />}
             {report && (
               <HazardTimeline
                 hazards={inTab}
@@ -372,18 +377,26 @@ export function ReportView({ id }: { id: string }) {
                 current={current}
                 selectedId={selectedId}
                 onSelect={select}
+                labelFor={(t) => whenLabel(report.source, t)}
+                endLabels={
+                  report.source.type === "photos" ? ["Photo 1", `Photo ${report.source.count}`] : undefined
+                }
                 onSeek={(t) => {
-                  if (report.source.type === "youtube") yt.current?.seekTo(t);
-                  else if (video.current) video.current.currentTime = t;
-                  setCurrent(t);
+                  // Photo reports step through photos: snap to the middle of the photo under the pointer.
+                  const s = report.source;
+                  const target = s.type === "photos" ? Math.floor(t / s.secondsPerPhoto) * s.secondsPerPhoto + s.secondsPerPhoto / 2 : t;
+                  if (s.type === "youtube") yt.current?.seekTo(target);
+                  else if (video.current) video.current.currentTime = target;
+                  setCurrent(target);
                 }}
+                step={report.source.type === "photos" ? report.source.secondsPerPhoto : undefined}
               />
             )}
           </Panel>
 
         <aside key={`list-${tab}`} className="enter-tab min-w-0 space-y-4 lg:col-start-2 lg:row-start-1">
           {status === "analyzing" ? (
-            <LoadingSteps youtube={report?.source.type === "youtube"} />
+            <LoadingSteps youtube={report?.source.type === "youtube"} photos={report?.source.type === "photos"} />
           ) : status === "error" ? null : report && report.hazards.length === 0 ? (
             <EmptyState icon={<ShieldCheckIcon />} action={<ButtonLink href="/" variant="secondary">Check another video</ButtonLink>}>
               No clear hazards in this video.
@@ -399,6 +412,7 @@ export function ReportView({ id }: { id: string }) {
                         hazard={h}
                         reportId={id}
                         isYouTube={report.source.type === "youtube"}
+                        when={(t) => whenLabel(report.source, t)}
                         price={report.prices[h.id]}
                         pricing={!!pricing[h.id]}
                         selected={h.id === selectedId}
@@ -421,6 +435,7 @@ export function ReportView({ id }: { id: string }) {
                             hazard={h}
                             reportId={id}
                             isYouTube={report.source.type === "youtube"}
+                            when={(t) => whenLabel(report.source, t)}
                             price={report.prices[h.id]}
                             pricing={!!pricing[h.id]}
                             selected={h.id === selectedId}
@@ -486,7 +501,9 @@ function SummaryHeader(props: {
           <p className="font-semibold text-primary">Home check</p>
           <h1 className="text-2xl sm:text-3xl">
             {status === "analyzing"
-              ? "Checking your walkthrough"
+              ? report?.source.type === "photos"
+                ? "Looking at your photos"
+                : "Checking your walkthrough"
               : status === "error"
                 ? "Couldn't check this video"
                 : findingsHeadline(sureHazards)}
@@ -550,11 +567,13 @@ function SummaryHeader(props: {
 }
 
 const STEPS = ["Watching the video", "Double-checking each finding", "Confirming in video frames"];
+const PHOTO_STEPS = ["Looking at your photos", "Double-checking each finding", "Confirming in each photo"];
 // Typical timings for an upload. The server doesn't stream progress, so steps advance on these timers and the
 // last step only finishes when the result arrives.
 const STEP_AT_MS = [0, 12_000, 24_000];
 
-function LoadingSteps({ youtube }: { youtube?: boolean }) {
+function LoadingSteps({ youtube, photos }: { youtube?: boolean; photos?: boolean }) {
+  const steps = photos ? PHOTO_STEPS : STEPS;
   const [current, setCurrent] = useState(0);
   useEffect(() => {
     const timers = STEP_AT_MS.slice(1).map((ms, i) => setTimeout(() => setCurrent(i + 1), youtube ? ms * 2 : ms));
@@ -564,7 +583,7 @@ function LoadingSteps({ youtube }: { youtube?: boolean }) {
     <Panel className="space-y-4" role="status" aria-live="polite">
       <p className="text-lg font-semibold">Checking… {youtube ? "up to 2 minutes" : "usually under a minute"}</p>
       <ol className="space-y-3">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <li key={s} className={`flex items-center gap-3 ${i > current ? "text-muted" : ""}`}>
             {i < current ? (
               <span key="done" className="enter grid h-5 w-5 place-content-center rounded-full bg-success text-on-primary">
@@ -611,6 +630,8 @@ function FindingRow(props: {
   hazard: Hazard;
   reportId: string;
   isYouTube: boolean;
+  /** "Photo 5" for photo reports, "0:12" for videos. */
+  when: (t: number) => string;
   price?: Price;
   pricing: boolean;
   selected: boolean;
@@ -630,7 +651,7 @@ function FindingRow(props: {
       <span className="min-w-0 flex-1 space-y-1">
         <span className="block font-semibold leading-snug">{h.title}</span>
         <span className="block text-sm text-muted tabular-nums">
-          {roomName(h.room)} · {fmtTime(h.timestamp_s)}
+          {roomName(h.room)} · {props.when(h.timestamp_s)}
         </span>
         <span className="flex flex-wrap items-center gap-2">
           <Tag tone={PRIORITY_TONE[h.priority]}>{PRIORITY_LABEL[h.priority]}</Tag>
@@ -674,7 +695,7 @@ function HazardDetail(props: {
             <div className="frame-overlay frame-overlay-tall absolute inset-0" aria-hidden />
             <div className="absolute inset-x-0 bottom-0 space-y-2 p-4 text-white sm:p-6">
               <p className="text-sm font-semibold tabular-nums">
-                {roomName(h.room)} · {fmtTime(h.timestamp_s)}
+                {roomName(h.room)} · {whenLabel(report.source, h.timestamp_s)}
               </p>
               <h2 id="finding-title" className="text-xl text-white sm:text-2xl">
                 {h.title}
@@ -684,7 +705,7 @@ function HazardDetail(props: {
         ) : (
           <div className="px-4 pt-6 sm:px-6">
             <p className="text-sm font-semibold text-muted tabular-nums">
-              {roomName(h.room)} · {fmtTime(h.timestamp_s)}
+              {roomName(h.room)} · {whenLabel(report.source, h.timestamp_s)}
             </p>
             <h2 id="finding-title" className="text-2xl">
               {h.title}

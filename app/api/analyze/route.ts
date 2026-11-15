@@ -69,7 +69,13 @@ export async function POST(req: Request) {
     const { rooms, hazards } =
       report.source.type === "youtube"
         ? await analyzeYouTube(report.source.url, report.resident)
-        : await analyzeVideo(videoPath(id), report.resident);
+        : await analyzeVideo(
+            videoPath(id),
+            report.resident,
+            report.source.type === "photos"
+              ? { count: report.source.count, secondsPerPhoto: report.source.secondsPerPhoto }
+              : undefined,
+          );
     const updated = { ...report, rooms_covered: rooms, hazards, prices: {}, clips: {}, local: {}, funding: null };
     await writeReport(updated);
     return NextResponse.json(updated);

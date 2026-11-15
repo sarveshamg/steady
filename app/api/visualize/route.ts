@@ -14,6 +14,12 @@ export async function POST(req: Request) {
     const { id, hazardId } = (await req.json()) as { id: string; hazardId: string };
     const report = await readReport(id);
     if (!report) return NextResponse.json({ error: "Report not found." }, { status: 404 });
+    if (report.source.type === "photos") {
+      return NextResponse.json(
+        { error: "Before/after views need a walkthrough video. Photo checks can't be edited." },
+        { status: 400 },
+      );
+    }
     if (report.source.type === "youtube") {
       return NextResponse.json(
         { error: "Before/after views need a video you upload yourself. YouTube videos can't be edited." },

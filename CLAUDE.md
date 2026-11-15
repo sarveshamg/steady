@@ -54,6 +54,8 @@ mount and only below the fold, so content shows without JS; reduced motion disab
 app/page.tsx                 upload / record
 app/api/youtube              create a report from a public YouTube link (analysis only)
 app/api/upload               save + compress (ffmpeg-static, 720p, no audio, ≤60 s)
+                             or 1–10 photos (jpg/png/webp, ≤15 MB; HEIC rejected) → 3 s/photo slideshow MP4
+                             (lib/ffmpeg.ts photosToVideo), source {type:"photos"}; then the normal pipeline
 app/api/analyze              Gemini video understanding + response schema → hazards
 app/api/price                Gemini + Google Search grounding → price range, sources, verified product links
 app/api/visualize            trim 8 s around hazard → Omni Flash edit (GET = budget)
@@ -74,6 +76,11 @@ data/                        uploads, results JSON, clips (gitignored)
 ```
 
 ## Findings and anti-hallucination
+
+- Photo reports: the slideshow runs through the same analysis, verify pass and frame check. lib/prompts.ts
+  photosContext() tells the model it's N separate stills (3 s each) and to look for condition problems in
+  close-ups; it does not lower the evidence bar. The frame check uses one frame from the middle of the photo.
+  The UI shows "Photo N" instead of times; before/after (Omni) is refused for photo reports.
 
 - Two kinds: `safety` (fall risks, judged for the specific resident) and `condition` (visible flaws: water
   damage, cracks, surface damage, fixtures, electrical, smoke detectors). Condition findings describe and refer

@@ -152,3 +152,18 @@ export const MaximizeIcon = ({ className }: P) => (
     <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
   </svg>
 );
+
+export const XIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </svg>
+);
+
+export const ImageIcon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21" />
+  </svg>
+);

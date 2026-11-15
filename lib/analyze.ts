@@ -7,7 +7,7 @@ import type { GoogleGenAI, Part } from "@google/genai";
 import { GoogleGenAI as Client } from "@google/genai";
 import { vertexClient, ANALYSIS_MODEL, extractJson } from "./genai";
 import { ANALYSIS_RESPONSE_SCHEMA, AnalysisFromModel, Hazard, Resident, VERIFY_RESPONSE_SCHEMA, FRAME_CHECK_SCHEMA } from "./schema";
-import { ANALYZE_PROMPT, residentContext, verifyPrompt } from "./prompts";
+import { ANALYZE_PROMPT, photosContext, residentContext, verifyPrompt } from "./prompts";
 import { applyResidentRules } from "./filters";
 import { z } from "zod";
 
@@ -27,13 +27,17 @@ function isOverloaded(err: unknown) {
   return /\b(503|429)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|high demand/i.test(String(err));
 }
 
+type PhotoSlideshow = { count: number; secondsPerPhoto: number };
+
 async function runAnalysis(
   ai: GoogleGenAI,
   videoPart: Part,
   resident?: Resident | null,
   frameSource?: string,
+  photos?: PhotoSlideshow,
 ): Promise<Result> {
-  const prompt = ANALYZE_PROMPT + residentContext(resident);
+  const photoNote = photos ? photosContext(photos.count, photos.secondsPerPhoto) : "";
+  const prompt = ANALYZE_PROMPT + residentContext(resident) + photoNote;
   let lastError: unknown;
   // Overload (503/429) gets backoff retries (and the fallback model, if set); bad output gets one plain retry.
   const plan = [ANALYSIS_MODEL, ANALYSIS_MODEL, ANALYSIS_MODEL, ...(FALLBACK_MODEL ? [FALLBACK_MODEL] : [])];
@@ -64,8 +68,12 @@ async function runAnalysis(
       const hazards = parsed.hazards
         .filter((h) => h.confidence >= MIN_CONFIDENCE && (h.evidence ?? "").trim().length > 0)
         .filter((h) => {
-          // Same category within ~3 s is the same thing reported twice.
-          const key = `${h.category}:${Math.round(h.timestamp_s / 3)}`;
+          // Video: same category within ~3 s is the same thing reported twice.
+          // Photos: a still photo can show several different problems of the same category (e.g. two
+          // surface_damage findings), so de-dupe by photo + category + title instead of by time.
+          const key = photos
+            ? `${h.category}:${Math.floor(h.timestamp_s / photos.secondsPerPhoto)}:${h.title.toLowerCase().replace(/[^a-z]+/g, " ").trim()}`
+            : `${h.category}:${Math.round(h.timestamp_s / 3)}`;
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -79,8 +87,8 @@ async function runAnalysis(
       const cleaned = hazards.map((h) => ({ ...h, room: h.room.replace(/[_-]+/g, " ").trim() }));
       // Person-specific hard rules (e.g. no second-handrail findings for someone who walks on their own).
       const forPerson = applyResidentRules(cleaned, resident);
-      const verified = await verifyFindings(ai, videoPart, forPerson);
-      return { rooms, hazards: frameSource ? await frameCheck(ai, frameSource, verified) : verified };
+      const verified = await verifyFindings(ai, videoPart, forPerson, photoNote);
+      return { rooms, hazards: frameSource ? await frameCheck(ai, frameSource, verified, photos?.secondsPerPhoto) : verified };
     } catch (err) {
       lastError = err;
       // A timed-out request will most likely time out again; don't double the wait.
@@ -112,7 +120,7 @@ const VerifyResult = z.object({
  * actually visible where claimed. Unconfirmed findings are dropped. If the check itself fails
  * (e.g. overload), findings are kept but marked verified: false so the UI can say so.
  */
-async function verifyFindings(ai: GoogleGenAI, videoPart: Part, hazards: Hazard[]): Promise<Hazard[]> {
+async function verifyFindings(ai: GoogleGenAI, videoPart: Part, hazards: Hazard[], extraContext = ""): Promise<Hazard[]> {
   if (hazards.length === 0) return hazards;
   try {
     const res = await ai.models.generateContent({
@@ -125,6 +133,7 @@ async function verifyFindings(ai: GoogleGenAI, videoPart: Part, hazards: Hazard[
             {
               text: verifyPrompt(
                 hazards.map((h) => ({ id: h.id, timestamp_s: h.timestamp_s, title: h.title, evidence: h.evidence ?? "" })),
+                extraContext,
               ),
             },
           ],
@@ -163,16 +172,20 @@ const FrameCheck = z.object({
  * frame shown in the UI is the one that was checked. Findings that fail are dropped; if the check can't run
  * for a finding (API error), that finding keeps its earlier status.
  */
-async function frameCheck(ai: GoogleGenAI, videoFile: string, hazards: Hazard[]): Promise<Hazard[]> {
+async function frameCheck(ai: GoogleGenAI, videoFile: string, hazards: Hazard[], photoSeconds?: number): Promise<Hazard[]> {
   if (hazards.length === 0) return hazards;
   const duration = (await durationSeconds(videoFile)) ?? Infinity;
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "steady-frames-"));
   try {
     const checked = await Promise.all(
       hazards.map(async (h): Promise<Hazard | null> => {
-        const times = [h.timestamp_s - 1.5, h.timestamp_s, h.timestamp_s + 1.5].map((t) =>
-          Math.max(0, Math.min(t, duration - 0.2)),
-        );
+        // Photo slideshows: one frame from the middle of the photo the finding is in (±1.5 s could land on the
+        // neighbouring photo). Videos: three frames around the timestamp.
+        const raw = photoSeconds
+          ? [Math.floor(h.timestamp_s / photoSeconds) * photoSeconds + photoSeconds / 2]
+          : [h.timestamp_s - 1.5, h.timestamp_s, h.timestamp_s + 1.5];
+        const times = raw.map((t) => Math.max(0, Math.min(t, duration - 0.2)));
+        const last = times.length - 1;
         try {
           const parts: Part[] = [];
           for (const [i, t] of times.entries()) {
@@ -182,12 +195,12 @@ async function frameCheck(ai: GoogleGenAI, videoFile: string, hazards: Hazard[])
             parts.push({ inlineData: { mimeType: "image/jpeg", data: (await fs.readFile(file)).toString("base64") } });
           }
           parts.push({
-            text: `These are frames from a home walkthrough video. A reviewer claims:
+            text: `${photoSeconds ? "This is a still photo from a home check." : "These are frames from a home walkthrough video."} A reviewer claims:
 "${h.title}". Evidence they gave: "${h.evidence ?? ""}".
 Is the specific thing described clearly visible in at least one of these frames? Be strict: if it is not visible,
 too small or blurry to judge, or the description goes beyond what the frames show, answer visible=false.
-If visible, best_frame is the index (0, 1 or 2) of the frame that shows it most clearly.
-Reply as JSON: {"visible": true/false, "best_frame": 0|1|2 or null, "reason": "one short sentence"}`,
+If visible, best_frame is the index (0 to ${last}) of the frame that shows it most clearly.
+Reply as JSON: {"visible": true/false, "best_frame": 0 to ${last} or null, "reason": "one short sentence"}`,
           });
           const res = await ai.models.generateContent({
             model: ANALYSIS_MODEL,
@@ -201,7 +214,8 @@ Reply as JSON: {"visible": true/false, "best_frame": 0|1|2 or null, "reason": "o
           });
           const r = FrameCheck.parse(extractJson(res.text ?? ""));
           if (!r.visible) return null;
-          const idx = typeof r.best_frame === "number" && r.best_frame >= 0 && r.best_frame <= 2 ? r.best_frame : 1;
+          const idx =
+            typeof r.best_frame === "number" && r.best_frame >= 0 && r.best_frame <= last ? r.best_frame : Math.min(1, last);
           return { ...h, timestamp_s: Math.round(times[idx] * 10) / 10, verified: h.verified !== false };
         } catch {
           return h; // couldn't check: keep as-is (verified flag already reflects the earlier pass)
@@ -215,9 +229,9 @@ Reply as JSON: {"visible": true/false, "best_frame": 0|1|2 or null, "reason": "o
 }
 
 /** Analyse a compressed upload, sent inline. */
-export async function analyzeVideo(videoFile: string, resident?: Resident | null): Promise<Result> {
+export async function analyzeVideo(videoFile: string, resident?: Resident | null, photos?: PhotoSlideshow): Promise<Result> {
   const data = (await fs.readFile(videoFile)).toString("base64");
-  return runAnalysis(vertexClient(), { inlineData: { mimeType: "video/mp4", data } }, resident, videoFile);
+  return runAnalysis(vertexClient(), { inlineData: { mimeType: "video/mp4", data } }, resident, videoFile, photos);
 }
 
 /**

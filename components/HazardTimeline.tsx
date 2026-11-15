@@ -15,8 +15,15 @@ export function HazardTimeline(props: {
   selectedId: string | null;
   onSelect: (h: Hazard) => void;
   onSeek?: (seconds: number) => void;
+  /** Label for a time: "Photo 5" on photo reports, "0:12" otherwise. */
+  labelFor?: (seconds: number) => string;
+  /** Labels under the two ends of the track (default: current time and total). */
+  endLabels?: [string, string];
+  /** Seek slider step in seconds (photo reports: one photo). */
+  step?: number;
 }) {
   const { hazards, duration, current, selectedId, onSelect, onSeek } = props;
+  const label = props.labelFor ?? fmtTime;
   if (!duration) return null;
   const progress = Math.min(1, Math.max(0, current / duration));
   return (
@@ -35,11 +42,11 @@ export function HazardTimeline(props: {
             type="range"
             min={0}
             max={Math.round(duration * 10) / 10}
-            step={0.1}
+            step={props.step ?? 0.1}
             value={Math.min(current, duration)}
             onChange={(e) => onSeek(Number(e.target.value))}
             aria-label="Seek"
-            aria-valuetext={`${fmtTime(current)} of ${fmtTime(duration)}`}
+            aria-valuetext={props.endLabels ? `${label(current)} of ${props.endLabels[1]}` : `${fmtTime(current)} of ${fmtTime(duration)}`}
             className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
           />
         )}
@@ -51,8 +58,8 @@ export function HazardTimeline(props: {
               key={h.id}
               type="button"
               onClick={() => onSelect(h)}
-              title={`${fmtTime(h.timestamp_s)} ${h.title}`}
-              aria-label={`${PRIORITY_LABEL[h.priority]}: ${h.title}, at ${fmtTime(h.timestamp_s)}`}
+              title={`${label(h.timestamp_s)}: ${h.title}`}
+              aria-label={`${PRIORITY_LABEL[h.priority]}: ${h.title}, ${props.endLabels ? "in" : "at"} ${label(h.timestamp_s)}`}
               aria-current={selected ? "true" : undefined}
               // 44px tap target around a small marker; sits above the seek slider.
               className="absolute top-1/2 z-10 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full"
@@ -68,8 +75,8 @@ export function HazardTimeline(props: {
         })}
       </div>
       <div className="flex justify-between text-sm text-muted tabular-nums">
-        <span>{fmtTime(current)}</span>
-        <span>{fmtTime(duration)}</span>
+        <span>{props.endLabels ? props.endLabels[0] : fmtTime(current)}</span>
+        <span>{props.endLabels ? props.endLabels[1] : fmtTime(duration)}</span>
       </div>
     </div>
   );

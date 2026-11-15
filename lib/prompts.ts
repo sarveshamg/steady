@@ -42,7 +42,13 @@ You report two kinds of findings, marked with "kind":
    For condition findings: DESCRIBE what is visible and recommend who should look at it. Never diagnose hidden
    causes (no "this is mold", "the foundation is failing", "the roof leaks"); say "possible water damage, have a
    plumber or inspector check it" instead. Never say something is safe, sound, or up to code.
-   Normal wear (minor scuffs, an older style, dated finishes) is NOT a flaw.
+   A single minor scuff, an older style, or dated finishes on their own are NOT flaws. But wear that adds up IS a
+   flaw a family would want fixed: walls with several holes, patched or scraped patches, missing paint, widespread
+   stains or marks (report as surface_damage, one finding per surface, e.g. "Walls need patching and repainting",
+   listing what you see); flooring that is visibly worn through, stained, curling, or damaged (surface_damage).
+   If a room clearly shows several signs of neglect together, also add ONE other_condition finding that sums up the
+   room's overall condition (e.g. "Room needs general repair: damaged wall paint, loose surface wiring, worn
+   flooring"), priority "soon" if it affects safety or will get worse, otherwise "nice_to_have".
    priority for condition: "urgent" only for exposed wiring or obvious active water damage; "soon" for things
    likely to get worse; "nice_to_have" for cosmetic damage.
 
@@ -160,7 +166,10 @@ export function omniPrompt(edit: string) {
   return `${edit.trim().replace(/\.$/, "")}. Keep everything else the same. Single continuous shot, no scene cuts. No people. No dialogue.`;
 }
 
-export function verifyPrompt(findings: Array<{ id: string; timestamp_s: number; title: string; evidence: string }>) {
+export function verifyPrompt(
+  findings: Array<{ id: string; timestamp_s: number; title: string; evidence: string }>,
+  extraContext = "",
+) {
   return `You are double-checking another assessor's findings against this video. Be strict and skeptical.
 For each finding, look at the video around its timestamp (a few seconds either side).
 - visible = true ONLY if the specific thing described in "evidence" is clearly visible in the video.
@@ -169,7 +178,7 @@ For each finding, look at the video around its timestamp (a few seconds either s
 - reason: one short sentence on what you see there.
 Findings:
 ${JSON.stringify(findings, null, 2)}
-Reply with JSON: {"results": [{"id": "...", "visible": true/false, "corrected_timestamp_s": number or null, "reason": "..."}]}`;
+Reply with JSON: {"results": [{"id": "...", "visible": true/false, "corrected_timestamp_s": number or null, "reason": "..."}]}${extraContext}`;
 }
 
 export function fundingPrompt(
@@ -249,4 +258,23 @@ The plan (JSON):
 ${planJson}
 
 Reply with only a JSON object: {"script": "the full spoken text"}`;
+}
+
+/** Extra context when the "video" is a slideshow built from still photos (appended to analysis and verify). */
+export function photosContext(count: number, secondsPerPhoto: number) {
+  const s = secondsPerPhoto;
+  const examples = Array.from({ length: Math.min(count, 3) }, (_, i) => `photo ${i + 1} = ${i * s}–${(i + 1) * s} s`).join(", ");
+  return `
+
+IMPORTANT: This video is a slideshow of ${count} still ${count === 1 ? "photo" : "photos"}, ${s} seconds each (${examples}${count > 3 ? "…" : ""}).
+Treat each photo as a separate view. Do not assume anything between photos.
+Report timestamp_s inside the photo where the hazard is visible.
+Photos are often close-ups taken because something looks wrong. Check carefully for home-condition problems as well as
+fall hazards: water stains or leaks, mold, cracked or lifting flooring, damaged stair treads, loose or broken railings,
+cracked tiles or grout, peeling paint, exposed wiring or missing outlet covers, damaged ceilings/drywall, worn weather
+stripping, broken fixtures. For each photo, also look at every wall, the floor and the ceiling as a whole and
+report their condition if it needs repair (patched or scraped paint, holes, stains, worn flooring), not only the
+single most obvious problem. A photo can have several findings. Only report what is clearly visible; say which photo
+and what you see.
+A close-up does not lower the bar: every finding still needs concrete evidence you can see in that photo.`;
 }

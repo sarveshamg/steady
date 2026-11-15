@@ -71,6 +71,12 @@ export type Price = z.infer<typeof Price>;
 export const VideoSource = z.discriminatedUnion("type", [
   z.object({ type: z.literal("upload") }),
   z.object({ type: z.literal("youtube"), url: z.string(), videoId: z.string() }),
+  // 1–10 photos turned into a slideshow MP4 (lib/ffmpeg.ts photosToVideo); photo n covers [(n-1)·s, n·s).
+  z.object({
+    type: z.literal("photos"),
+    count: z.number().int().min(1).max(10),
+    secondsPerPhoto: z.number().positive().default(3),
+  }),
 ]);
 export type VideoSource = z.infer<typeof VideoSource>;
 

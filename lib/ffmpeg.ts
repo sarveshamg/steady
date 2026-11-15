@@ -26,6 +26,30 @@ export async function compress(input: string, output: string) {
   ]);
 }
 
+/** Seconds each photo is shown in a photo slideshow. */
+export const SECONDS_PER_PHOTO = 3;
+
+/**
+ * Turn 1–10 still photos into a slideshow MP4 so they run through the normal video pipeline unchanged.
+ * Each photo is shown for `seconds`, fitted inside 1280x720 with black letterbox bars, 30 fps, H.264, yuv420p,
+ * no audio.
+ */
+export async function photosToVideo(paths: string[], output: string, seconds = SECONDS_PER_PHOTO) {
+  if (paths.length === 0) throw new Error("No photos");
+  const inputs = paths.flatMap((p) => ["-loop", "1", "-framerate", "30", "-t", String(seconds), "-i", p]);
+  const fit = "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black";
+  const chains = paths.map((_, i) => `[${i}:v]${fit},setsar=1,fps=30,format=yuv420p[v${i}]`).join(";");
+  const concat = `${paths.map((_, i) => `[v${i}]`).join("")}concat=n=${paths.length}:v=1:a=0[out]`;
+  await run([
+    "-y", ...inputs,
+    "-filter_complex", `${chains};${concat}`,
+    "-map", "[out]", "-r", "30",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+    "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart",
+    output,
+  ]);
+}
+
 /** Cut a short clip (Omni Flash edits accept 10 s or less). */
 export async function trim(input: string, output: string, startS: number, durationS: number) {
   await run([
