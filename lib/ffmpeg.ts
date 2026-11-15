@@ -49,3 +49,8 @@ export function durationSeconds(input: string): Promise<number | null> {
     });
   });
 }
+
+/** Grab one JPEG frame at a timestamp (used to show the evidence for each finding). */
+export async function frameAt(input: string, output: string, atS: number) {
+  await run(["-y", "-ss", String(Math.max(0, atS)), "-i", input, "-frames:v", "1", "-vf", "scale=-2:480", "-q:v", "4", output]);
+}

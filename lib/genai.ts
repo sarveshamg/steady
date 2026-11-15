@@ -18,8 +18,8 @@ export function vertexClient(): GoogleGenAI {
 
 /** Omni Flash client: an AI Studio key if provided, otherwise Vertex. */
 export function omniClient(): GoogleGenAI {
-  const key = process.env.GEMINI_API_KEY;
-  return key ? new GoogleGenAI({ apiKey: key }) : vertexClient();
+  const key = process.env.GEMINI_API_KEY?.trim();
+  return key ? new GoogleGenAI({ apiKey: key, vertexai: false }) : vertexClient();
 }
 
 export const ANALYSIS_MODEL = process.env.ANALYSIS_MODEL || "gemini-3.8-flash";

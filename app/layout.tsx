@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Steady — home safety walkthrough",
-  description: "Film a room. See the fall risks, the fixes, and what it costs.",
+  description: "Film your home. See the fall risks, the fixes, and what it costs.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

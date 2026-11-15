@@ -23,7 +23,7 @@ export function retailerFor(url: string): string | null {
   }
 }
 
-function normalize(url: string) {
+export function normalize(url: string) {
   try {
     const u = new URL(url);
     return `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/$/, "")}`.toLowerCase();

@@ -14,6 +14,7 @@ export default function UploadPage() {
   const [dragging, setDragging] = useState(false);
   const [ytUrl, setYtUrl] = useState("");
   const [resident, setResident] = useState<Resident>(DEFAULT_RESIDENT);
+  const [location, setLocation] = useState("");
 
   async function submitYouTube(e: React.FormEvent) {
     e.preventDefault();
@@ -24,7 +25,7 @@ export default function UploadPage() {
       const res = await fetch("/api/youtube", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: ytUrl, resident }),
+        body: JSON.stringify({ url: ytUrl, resident, location }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "That link didn't work");
@@ -43,10 +44,11 @@ export default function UploadPage() {
       const body = new FormData();
       body.append("video", file);
       body.append("resident", JSON.stringify(resident));
+      if (location.trim()) body.append("location", location.trim());
       const res = await fetch("/api/upload", { method: "POST", body });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Upload failed");
-      router.push(`/report/${json.id}`);
+      router.push(`/report/${json.id}${json.duplicate ? "?seen=1" : ""}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
       setBusy(false);
@@ -58,7 +60,7 @@ export default function UploadPage() {
       <section>
         <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-sage">For families of older adults</p>
         <h1 className="mb-4 text-4xl font-bold leading-tight md:text-5xl">
-          Film a room.
+          Film your home.
           <br />
           See what could cause a fall.
         </h1>
@@ -71,6 +73,21 @@ export default function UploadPage() {
           <ResidentForm value={resident} onChange={setResident} />
           <p className="mt-3 text-xs text-muted">
             The same rug is a small issue for one person and urgent for someone with a walker.
+          </p>
+          <label htmlFor="location" className="mt-4 block text-sm font-semibold">
+            ZIP code or address <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <input
+            id="location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            maxLength={200}
+            autoComplete="postal-code"
+            placeholder="e.g. 95064"
+            className="mt-2 w-full rounded-full border border-line bg-paper px-4 py-2 text-sm"
+          />
+          <p className="mt-1 text-xs text-muted">
+            Used only to find local businesses that can help with each fix. A ZIP code is enough.
           </p>
         </div>
         <ol className="space-y-2 text-muted">
@@ -126,7 +143,7 @@ export default function UploadPage() {
             disabled={!file || busy}
             className="rounded-full bg-sage px-6 py-3 font-semibold text-white disabled:opacity-40"
           >
-            {busy ? "Preparing video…" : "Check this room"}
+            {busy ? "Preparing video…" : "Check this home"}
           </button>
         </div>
         <form onSubmit={submitYouTube} className="mt-8 border-t border-line pt-6 text-left">

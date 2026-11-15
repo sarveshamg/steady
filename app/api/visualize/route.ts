@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readReport, videoPath, writeReport } from "@/lib/storage";
+import { logError, readReport, videoPath, writeReport } from "@/lib/storage";
 import { omniBudget, visualizeFix } from "@/lib/omni";
 
 export const runtime = "nodejs";
@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json(result);
   } catch (err) {
     console.error(err);
+    await logError("visualize", err);
     return NextResponse.json({ error: String(err instanceof Error ? err.message : err) }, { status: 500 });
   }
 }

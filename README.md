@@ -5,6 +5,20 @@ search results, and shows the fix installed in your own room with Gemini Omni Fl
 
 Built for DevFest Santa Cruz 2026.
 
+## The problem
+
+Older adults often can't afford home repairs, and figuring out what to fix, who to call and how to
+pay is overwhelming. Steady turns one video into **one simple plan**:
+
+1. **Do today, free:** move the cord, clear the path.
+2. **Under $50, do it yourself:** with a price range and store links.
+3. **Get help with:** the bigger jobs, each paired with a verified local program that can help pay for it
+   (or do it for you), plus a nearby business, and one big "Call for help" button for the local Area Agency
+   on Aging.
+
+The plan can be read aloud in English, Spanish, Vietnamese, Chinese, Tagalog or Korean, and shared with
+family as a read-only link.
+
 ## Run it (Mac)
 
 ```bash
@@ -29,11 +43,29 @@ YouTube videos would break YouTube's terms. If Vertex rejects YouTube URLs in yo
 
 | Service | What it does in Steady |
 |---|---|
-| Gemini (Vertex AI) video understanding | Finds hazards in uploads and public YouTube videos, with timestamps and structured output |
+| Gemini video understanding + structured output (Vertex AI) | Finds hazards in uploads and public YouTube videos, with timestamps, evidence and a Zod-validated response schema |
+| Gemini multi-pass verification | A second, independent pass re-watches the video and must confirm each finding; unconfirmed findings are dropped |
+| Gemini frame-level image checks | Real frames around each timestamp (ffmpeg) are checked so the frame shown is the one that proves the finding |
+| Grounding with Google Search | Current price ranges and verified product links for each fix, and local **assistance programs** (each URL checked against search results or a live page; phones and "free" claims kept only if the program's page shows them) |
+| Places API (New) | Geocodes the home once and finds independent local businesses within 25 miles for each pro fix |
+| Gemini Omni Flash | Edits an 8-second clip of the user's room to show the fix installed (before/after) |
+| Gemini TTS | Reads the Simple plan aloud in 6 languages (calm "Kore" voice, captions on screen) |
 | YouTube IFrame Player API | Embedded, seekable player for YouTube reports |
-| Grounding with Google Search | Current price ranges with source links for each fix |
-| Gemini Omni Flash | Edits an 8-second clip of the user's room to show the fix installed |
 | Cloud Run | Hosting |
+
+## Configuration
+
+In `.env.local` (see `.env.example`). Never commit keys.
+
+- `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`: Vertex AI via Application Default Credentials.
+- `GOOGLE_MAPS_API_KEY`: Places API (New) for local help and a street-free city/ZIP label.
+- `GEMINI_API_KEY` (optional): YouTube links, and the TTS fallback if the TTS model isn't on Vertex.
+- `TTS_MODEL` (optional): defaults to `gemini-3.8-flash-tts`.
+
+## Privacy
+
+The ZIP code or address is used only to search for help nearby. Prompts and the shared plan page use the
+city/ZIP only, never a street address. The shared page shows no video.
 
 ## Generating the "after" clips (costs money)
 

@@ -1,17 +1,73 @@
-export const ANALYZE_PROMPT = `You are a home-safety assessor helping an older adult stay safely in their home.
-Watch this walkthrough video and list every fall hazard or accessibility barrier that is VISIBLE.
+export const ANALYZE_PROMPT = `You are an occupational therapist doing a home fall-risk assessment for an older adult.
+Watch this walkthrough video and report ONLY specific, visible conditions that a professional assessor would
+actually write down as a fall risk or access barrier, plus clearly visible flaws in the home's condition
+(see the two kinds below). Precision matters: a report full of generic or cosmetic
+items is useless and makes families ignore the real ones.
 
-Scope (only these): loose or curled rugs and mats, cords or clutter on walking paths, poor or missing
-lighting (dark hallways, stairs, bathrooms), missing grab bars near toilet or tub/shower, slippery
-tub/shower floors with no non-slip mat, stairs without sturdy handrails on both sides, high tub edges,
-low toilets, raised thresholds, narrow or obstructed doorways, everyday items stored too high or too low.
+How to look (do this silently before answering): go through the video room by room, in order. In each room,
+scan the floor and walking paths, anything people step on or over, anything they would hold or lean on, the lighting,
+and the specific furniture and fixtures. Report what is genuinely risky about THIS home's particular layout and
+objects. The kinds of things that matter include (this is NOT a checklist to fill in; most homes have only a few):
+- Walking surfaces: curled or bunched rug edges, small throw rugs in paths, slick tile at entries or near sinks,
+  worn or loose stair carpet or tread nosing, cords, pet bowls, low clutter in paths
+- Level changes: single steps, sunken rooms, step-down patios, raised thresholds, uneven transitions between floors,
+  stairs with no rail at all, stairs cluttered with items, outdoor entry steps with no rail
+- Things people grab or lean on: wobbly or rolling furniture, towel bars used as supports, glass or low tables in
+  walkways, chairs without arms where someone would sit and stand
+- Lighting: dark stairways or hallways, no light switch at the bottom or top of stairs, lamps that must be reached
+  across furniture, strong glare on floors
+- Reach and storage: everyday items stored very high (step-stool territory) or on the floor
+- Bathroom: no non-slip surface in tub or shower, high tub wall, very low toilet, bath mats without backing
+- Fire and burns: space heaters or candles near curtains or furniture, clutter on or beside the stove,
+  overloaded power strips
+- Getting out: blocked or cluttered exits and doorways
+Be specific to what you see: name the exact object and place ("the single step down from the foyer into the
+living room", not "level change"). Prefer a different, accurate observation over repeating a generic one.
+Two findings must not describe the same object.
+
+You report two kinds of findings, marked with "kind":
+
+1. kind "safety": fall risks and access barriers (the list above). Use the safety categories:
+   trip, slip, lighting, stairs, reach, clearance, bathroom, fire, egress, other.
+
+2. kind "condition": visible flaws in the home itself that a family or buyer would want fixed or checked.
+   Use the condition categories:
+   - water_damage: brown or yellow ceiling/wall stains, bubbling paint, warped or swollen flooring or cabinet bases
+   - crack: visible cracks in walls, ceilings, tile, or around door/window frames
+   - surface_damage: peeling paint, holes in drywall, broken or missing tiles, torn flooring
+   - fixture: broken, hanging, or missing fixtures, handles, cabinet doors, light covers, outlet/switch plates
+   - electrical: exposed wiring, open junction boxes, scorched outlets, extension cords run as permanent wiring
+   - smoke_detector: a ceiling clearly and fully shown in a bedroom or hallway with no smoke detector on it
+   - other_condition: any other clearly visible defect
+   For condition findings: DESCRIBE what is visible and recommend who should look at it. Never diagnose hidden
+   causes (no "this is mold", "the foundation is failing", "the roof leaks"); say "possible water damage, have a
+   plumber or inspector check it" instead. Never say something is safe, sound, or up to code.
+   Normal wear (minor scuffs, an older style, dated finishes) is NOT a flaw.
+   priority for condition: "urgent" only for exposed wiring or obvious active water damage; "soon" for things
+   likely to get worse; "nice_to_have" for cosmetic damage.
+
+Only report what is CLEARLY visible:
+- The hazard must be in frame, in focus, and well lit for long enough to judge (not a blur, a corner of the frame,
+  or a passing glance). If you would need to guess, do not report it.
+- Never report something because it is NOT visible (e.g. "no grab bar" when the wall beside the toilet is never
+  shown, or "no night light" when you can't see the outlets). Only report a missing safety feature if the spot
+  where it should be is clearly shown.
+
+Do NOT report:
+- Things that are merely present and normal (a rug lying flat, a mat at a door, a polished floor with no water or
+  visible slickness, decorative furniture, plants) unless something specific makes them risky
+- Style, cleanliness, or design opinions
+- Guesses about things not visible in the video
+- The same issue twice
 
 Rules:
-- Report only what you can actually see. Never invent hazards. If unsure, include it with lower confidence.
-- Missing a real hazard is worse than a false alarm, so include borderline items with confidence below 0.5.
+- evidence: one sentence describing exactly what you see that makes it a hazard ("the rug corner by the doorway is
+  curled up about an inch"). If you cannot write specific evidence, do not report it.
+- confidence: how sure you are that this is a real hazard a professional would flag (0 to 1). Be honest: 0.9 for
+  clear cases, 0.5 for plausible but unclear, below 0.5 means you probably should not report it.
 - timestamp_s is the second in the video where the hazard is most clearly visible.
-- Do not estimate exact measurements from video. If a measurement matters (doorway width, step height,
-  grab bar placement), put a short instruction in needs_measurement, e.g. "Confirm the doorway is at least 32 inches wide".
+- Do not estimate exact measurements from video. If a measurement matters, put a short instruction in
+  needs_measurement, e.g. "Confirm the doorway is at least 32 inches wide".
 - fix: one concrete change, in plain language.
 - diy_or_pro: "pro" for anything anchored into walls (grab bars must go into studs), electrical, plumbing,
   structural, or stair railings; otherwise "diy".
@@ -19,14 +75,30 @@ Rules:
 - omni_edit_prompt: a SHORT video-edit instruction that shows the fix installed, e.g.
   "Add a stainless steel grab bar on the wall beside the toilet." or "Remove the rug from the floor."
 - Write for a worried adult child reading on a phone: short, calm, specific. No medical advice.
-- If there are no hazards, return an empty hazards list.`;
+- A well-kept home may have zero or one real hazard. That is a good, useful answer: return an empty list rather
+  than padding it.`;
 
 import type { Resident } from "./schema";
 
 /** Who lives here changes what matters. Appended to the analysis prompt. */
+/** True when the family told us nothing beyond "walks on their own". */
+export function isPlainResident(r: Resident | null | undefined): boolean {
+  return (
+    !r ||
+    (r.mobility === "none" && !r.low_vision && !r.night_bathroom && !r.fell_recently && !r.other_needs?.trim())
+  );
+}
+
 export function residentContext(r: Resident | null | undefined): string {
-  if (!r) {
-    return `\n\nNo information about the resident was given. Assume an older adult who walks without aids. Set personal_note to null.`;
+  if (!r || isPlainResident(r)) {
+    return `\n\nThe person is an older adult who walks on their own with no reported mobility, vision, or balance issues
+and no recent falls. Judge SAFETY findings for THAT person (condition findings are unaffected):
+- Only flag things that are a real risk for an able older adult (loose or curled rugs in paths, cords, clutter,
+  very dark routes, a staircase with no rail at all, a slippery tub with nothing to hold).
+- Do NOT flag accessibility upgrades that mainly matter for someone with a disability or reduced mobility
+  (a second stair rail, doorway width, ramps, grab bars beside a toilet, raised toilet seats, reach range).
+  At most, list such an item as "nice_to_have" and only if it is very clearly relevant.
+- Set personal_note to null.`;
   }
   const facts: string[] = [];
   const rules: string[] = [];
@@ -86,4 +158,95 @@ Reply with only a JSON object:
 
 export function omniPrompt(edit: string) {
   return `${edit.trim().replace(/\.$/, "")}. Keep everything else the same. Single continuous shot, no scene cuts. No people. No dialogue.`;
+}
+
+export function verifyPrompt(findings: Array<{ id: string; timestamp_s: number; title: string; evidence: string }>) {
+  return `You are double-checking another assessor's findings against this video. Be strict and skeptical.
+For each finding, look at the video around its timestamp (a few seconds either side).
+- visible = true ONLY if the specific thing described in "evidence" is clearly visible in the video.
+- visible = false if it is not there, is too blurry or brief to judge, or the description is exaggerated or guessed.
+- If it is clearly visible but at a different time, set corrected_timestamp_s to the better second.
+- reason: one short sentence on what you see there.
+Findings:
+${JSON.stringify(findings, null, 2)}
+Reply with JSON: {"results": [{"id": "...", "visible": true/false, "corrected_timestamp_s": number or null, "reason": "..."}]}`;
+}
+
+export function fundingPrompt(
+  area: string,
+  findings: Array<{ id: string; title: string; diy_or_pro: string; category: string }>,
+  resident: string,
+) {
+  const list =
+    findings.length > 0
+      ? findings
+          .map((f) => `- [${f.id}] ${f.title} (${f.diy_or_pro === "pro" ? "needs a professional" : "do-it-yourself"}; ${f.category.replace(/_/g, " ")})`)
+          .join("\n")
+      : "- (no specific findings yet: general home safety repairs and modifications)";
+  return `You are helping an older adult who lives in ${area} find real programs that help pay for, or do, home safety repairs and modifications.
+Their home walkthrough found:
+${list}
+About the resident: ${resident}
+
+Search the web and list up to 6 programs that SERVE ${area} specifically and help older adults or low-income homeowners pay for, or perform, home safety modifications or repairs. Look for:
+- the Area Agency on Aging that covers ${area}
+- nonprofit repair programs serving this area (for example a local Rebuilding Together affiliate, or a Habitat for Humanity home repair program)
+- city or county home repair or home modification grants
+- the state's Medicaid home-modification waiver
+- veteran home-modification programs
+- USDA rural home repair grants, only if ${area} is rural
+- utility or weatherization programs, only if they fit the findings
+
+Rules:
+- Copy each url exactly from your search results. Never construct, shorten or guess a URL. Prefer the program's own page.
+- If you are not sure a program serves ${area}, leave it out. Fewer accurate programs are better than more guesses.
+- covers: what it pays for or does, in plain words.
+- who_qualifies: plain words, e.g. "Homeowners 60 and older with limited income may qualify." Never promise or guarantee eligibility or money.
+- how_to_apply: one or two plain sentences.
+- phone: only if it is printed on the program's own page; otherwise null.
+- cost_to_family: "free", "reduced", "reimbursed" or "loan" only if the program's own page says so; otherwise "unknown".
+- does_the_work: true only if the program itself sends people to do the repairs.
+- matches_findings: the ids in square brackets above that this program could help with (can be empty).
+- is_area_agency_on_aging: true only for the Area Agency on Aging.
+Reply with only a JSON object:
+{"programs": [{"name": "string", "provider": "string", "covers": "string", "who_qualifies": "string", "how_to_apply": "string",
+ "phone": "string or null", "url": "string", "matches_findings": ["h1"], "does_the_work": true, "cost_to_family": "unknown",
+ "is_area_agency_on_aging": false}]}`;
+}
+
+export const LISTEN_LANGUAGES = {
+  en: "English",
+  es: "Spanish",
+  vi: "Vietnamese",
+  zh: "Mandarin Chinese (simplified characters)",
+  tl: "Tagalog (Filipino)",
+  ko: "Korean",
+} as const;
+export type ListenLang = keyof typeof LISTEN_LANGUAGES;
+
+export function listenPrompt(lang: ListenLang, planJson: string) {
+  return `Write a short spoken version of this home safety plan, to be read aloud to an older adult in ${LISTEN_LANGUAGES[lang]}.
+It should take 60 to 90 seconds to read slowly (about 150 to 220 words in English; similar length in other languages).
+Tone: warm, calm and reassuring. Use plain, everyday words. Short sentences. No jargon.
+
+Order:
+1. A one-sentence warm opening.
+2. "today_free" items: things to do today that cost nothing.
+3. "under_50" items: small things to buy and do yourself; say the rough price in words (for example "about twenty to thirty dollars").
+4. "get_help" items: bigger jobs. For each, mention its program using ONLY what its "program_says" field allows:
+   - "may_do_it_free": you may say there's a program near you that may do this for free.
+   - "may_do_it": you may say there's a program near you that may be able to do this for you.
+   - "may_help_pay": you may say there's a program near you that may help pay for it.
+   - null: suggest asking the local Area Agency on Aging for help.
+   Never promise that anyone qualifies or that anything is free beyond what "program_says" allows.
+5. If an item has a "personal_note", include it naturally (it explains why this matters for them).
+6. End with exactly this idea, in ${LISTEN_LANGUAGES[lang]}: "Everything is listed on screen, and you can call for help using the big button."
+
+Rules: no markdown, no lists or bullet symbols, no URLs, no phone numbers or digits of phone numbers, no names of websites.
+Do not add any hazards, programs or advice that are not in the plan. If a section is empty, skip it.
+
+The plan (JSON):
+${planJson}
+
+Reply with only a JSON object: {"script": "the full spoken text"}`;
 }

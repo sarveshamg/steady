@@ -7,9 +7,10 @@ export const DATA_DIR = process.env.STEADY_DATA_DIR || path.join(process.cwd(), 
 export const UPLOADS = path.join(DATA_DIR, "uploads");
 export const RESULTS = path.join(DATA_DIR, "results");
 export const CLIPS = path.join(DATA_DIR, "clips");
+export const AUDIO = path.join(DATA_DIR, "audio");
 
 export async function ensureDirs() {
-  await Promise.all([UPLOADS, RESULTS, CLIPS].map((d) => fs.mkdir(d, { recursive: true })));
+  await Promise.all([UPLOADS, RESULTS, CLIPS, AUDIO].map((d) => fs.mkdir(d, { recursive: true })));
 }
 
 export function newId() {
@@ -47,5 +48,18 @@ export async function exists(p: string) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Append server errors to data/errors.log (gitignored) so they can be inspected without the terminal. */
+export async function logError(where: string, err: unknown) {
+  try {
+    await ensureDirs();
+    const detail = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
+    // Never write keys: strip anything that looks like one.
+    const safe = detail.replace(/(key=|AIza|AQ\.)[A-Za-z0-9_.\-]{10,}/g, "$1<redacted>");
+    await fs.appendFile(path.join(DATA_DIR, "errors.log"), `[${new Date().toISOString()}] ${where}: ${safe}\n\n`);
+  } catch {
+    /* logging must never break a request */
   }
 }

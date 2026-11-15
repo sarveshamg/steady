@@ -2,7 +2,12 @@ import { promises as fs, createReadStream } from "fs";
 import { Readable } from "stream";
 
 /** Stream an mp4 with HTTP Range support so the player can seek to hazard timestamps. */
-export async function serveMp4(file: string, req: Request): Promise<Response> {
+export function serveMp4(file: string, req: Request): Promise<Response> {
+  return serveFile(file, req, "video/mp4");
+}
+
+/** Stream any media file with HTTP Range support (video seeking, audio scrubbing). */
+export async function serveFile(file: string, req: Request, contentType: string): Promise<Response> {
   let size: number;
   try {
     size = (await fs.stat(file)).size;
@@ -11,7 +16,7 @@ export async function serveMp4(file: string, req: Request): Promise<Response> {
   }
   const range = req.headers.get("range");
   const headers: Record<string, string> = {
-    "Content-Type": "video/mp4",
+    "Content-Type": contentType,
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=3600",
   };

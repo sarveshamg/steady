@@ -5,6 +5,10 @@ walkthrough of a room; Steady finds fall hazards and access barriers, explains e
 recommends a fix with a grounded price range, and shows the fix installed in *their own room*
 using a Gemini Omni Flash video edit.
 
+**The problem (use this framing in UI copy and docs):** older adults often can't afford home repairs, and
+figuring out what to fix, who to call and how to pay is overwhelming. Steady turns one video into ONE simple
+plan: what you can fix today for free, what's cheap, and who will help pay for (or even do) the rest.
+
 Target tracks: Best Social Impact (primary), Best Integration of Gemini / Google APIs
 (secondary), Best UI.
 
@@ -32,11 +36,57 @@ app/api/analyze              Gemini video understanding + response schema → ha
 app/api/price                Gemini + Google Search grounding → price range, sources, verified product links
 app/api/visualize            trim 8 s around hazard → Omni Flash edit (GET = budget)
 app/api/video/[id], clip/…   mp4 streaming with Range support (timeline seeking)
-app/report/[id]              ReportView: player, hazard timeline, list, detail, before/after
-lib/                         schema, prompts, analyze, price, omni, ffmpeg, storage, genai
+app/api/location             save ZIP/address for the report; clears geo, local help and funding
+app/api/local                Places API (New): geocode once, 40 km bias, ≤25 mi, local businesses per fix
+app/api/funding              grounded search for assistance programs + verification (lib/funding.ts)
+app/api/listen               Simple plan → spoken script (Gemini) → Gemini TTS WAV, cached in data/audio
+app/api/audio/[name]         WAV streaming with Range support
+app/report/[id]              ReportView: tabs Simple plan (default) / Safety / Home condition
+app/plan/[id]                read-only shared plan for family (server-rendered, city/ZIP only, no video)
+components/SimplePlan.tsx    three sections + Call for help card; ListenCard, ShareButton alongside
+lib/plan.ts                  pure plan logic (free / under $50 / get help), shared by UI, share page, script
+lib/funding.ts, lib/tts.ts   assistance programs + verification; Gemini TTS over REST
+lib/                         schema, prompts, analyze, price, omni, ffmpeg, storage, genai, area, geo, local
 scripts/eval.ts              recall / extra-findings eval on labelled real walkthroughs
 data/                        uploads, results JSON, clips (gitignored)
 ```
+
+## Findings and anti-hallucination
+
+- Two kinds: `safety` (fall risks, judged for the specific resident) and `condition` (visible flaws: water
+  damage, cracks, surface damage, fixtures, electrical, smoke detectors). Condition findings describe and refer
+  ("have a plumber check it"); they never diagnose hidden causes or call anything safe/up to code.
+- Every finding must include concrete `evidence`; confidence < 0.5 or empty evidence is dropped.
+- A second, independent Gemini pass (lib/analyze.ts verifyFindings) re-watches the video and must confirm each
+  finding is visible where claimed; unconfirmed findings are dropped. If that pass fails, findings are kept with
+  verified: false and the UI says so.
+- The UI shows the actual video frame for each finding (/api/frame) so people can judge the evidence themselves.
+
+## Assistance programs (lib/funding.ts): anti-hallucination rules
+
+These programs are where a wrong answer hurts most (a fake grant or a dead phone number wastes an older
+adult's time and trust). Keep every one of these:
+
+- **Privacy:** prompts get the city/ZIP only (`location_area` from Places addressComponents, else
+  `lib/area.ts` strips street lines). Never put a street address in a prompt or on the share page.
+- **Inputs:** only confident findings (confidence ≥ 0.75): id, title, diy_or_pro, category; resident mobility,
+  low vision, recent fall. Nothing else from the resident profile.
+- **Prompt rules:** serves THIS area or leave it out; copy URLs exactly from search results; never construct
+  URLs; no guarantees of eligibility; fewer accurate programs beat more guesses.
+- **Parsing:** grounded text → Zod; if not clean JSON, a schema-constrained conversion call (same as price.ts).
+  Each program is validated individually and dropped if invalid.
+- **URL check:** keep a program only if its URL (host+path) matches a resolved grounding URL, or a live GET
+  returns < 400 (403/429/503 count as "exists"; 404/410 and everything else = drop).
+- **Claims need page evidence:** a phone number is kept only if it appears on the program's own page;
+  cost_to_family other than "unknown" is kept only if the page text supports it ("free", "loan", ...).
+  Sentences with "guarantee" are removed from who_qualifies.
+- **Sorting:** official (.gov / provider's own domain; directories never count) first, then
+  does_the_work && free, then the rest.
+- **Fallback:** the Eldercare Locator card (eldercare.acl.gov) is added only if the page is live at runtime;
+  its phone is shown only if the page itself shows it.
+- **Read-aloud** never sees URLs, phones or addresses, and program claims are pre-decided from verified fields
+  (`program_says` in lib/listen.ts), so the voice can't promise more than the screen.
+- Cached as `report.funding`; cleared when the location changes or analysis is re-run (hazard ids change).
 
 ## Facts verified against Google docs (Nov 2026)
 
@@ -48,10 +98,18 @@ data/                        uploads, results JSON, clips (gitignored)
 - Omni Flash does not accept YouTube sources. Never download YouTube videos (ToS); YouTube reports skip before/after.
 - Outputs over ~4 MB may come back as a URI instead of inline data; `lib/omni.ts` handles both.
 - Model IDs and Vertex availability change: verify before the demo, override via env vars.
+- Gemini TTS (`gemini-3.8-flash-tts`, env `TTS_MODEL`): on Vertex it's `generateContent` with
+  `parts[].speechMetadata.style` and `generationConfig.speechConfig.voiceConfig.voice` (not the older
+  `prebuiltVoiceConfig.voiceName`); on the Gemini API it's the Interactions API with a `speech_metadata`
+  annotation and `generation_config.speech_config: [{voice}]`. Both return WAV. `lib/tts.ts` calls REST directly
+  because @google/genai 1.x drops these fields; raw PCM (older models) is wrapped in a WAV header.
+- In `next dev`, React 19 includes awaited server I/O results (e.g. the raw report JSON read by `readReport`) in
+  the page payload as debug info. That's dev-only; the share page's own props are scrubbed. Verify the share
+  page on a production build before relying on it for privacy.
 
 ## Next steps
 
 - Run a real walkthrough end to end; tune `lib/prompts.ts` from what it misses.
 - Stage hazards and run `npm run eval`; report only measured numbers.
-- Stretch: Google Maps Places for nearby aging-in-place contractors on "pro" fixes;
-  Firebase share link for family; deploy to Cloud Run.
+- Check the funding results for the demo ZIP by hand (every link, every phone) before presenting.
+- Stretch: deploy to Cloud Run (check the share page there: production build, no dev debug info).

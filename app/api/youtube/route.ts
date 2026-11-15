@@ -6,7 +6,12 @@ import { Resident } from "@/lib/schema";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const { url, resident: rawResident } = (await req.json().catch(() => ({}))) as { url?: string; resident?: unknown };
+  const { url, resident: rawResident, location: rawLocation } = (await req.json().catch(() => ({}))) as {
+    url?: string;
+    resident?: unknown;
+    location?: string;
+  };
+  const location = rawLocation?.trim().slice(0, 200) || null;
   const resident = Resident.safeParse(rawResident).data ?? null;
   const yt = url ? parseYouTube(url) : null;
   if (!yt) {
@@ -23,6 +28,11 @@ export async function POST(req: Request) {
     hazards: [],
     prices: {},
     clips: {},
+    location,
+    location_geo: null,
+    location_area: null,
+    funding: null,
+    local: {},
   });
   return NextResponse.json({ id });
 }

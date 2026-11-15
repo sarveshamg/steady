@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readReport, writeReport } from "@/lib/storage";
+import { logError, readReport, writeReport } from "@/lib/storage";
 import { priceHazard } from "@/lib/price";
 
 export const runtime = "nodejs";
@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     return NextResponse.json(price);
   } catch (err) {
     console.error(err);
+    await logError("price", err);
     return NextResponse.json({ error: `Pricing failed: ${String(err)}` }, { status: 500 });
   }
 }

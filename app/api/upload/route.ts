@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
-import { UPLOADS, ensureDirs, newId, videoPath, writeReport } from "@/lib/storage";
+import { DATA_DIR, UPLOADS, ensureDirs, exists, newId, readReport, videoPath, writeReport } from "@/lib/storage";
+import crypto from "crypto";
 import { compress, durationSeconds } from "@/lib/ffmpeg";
 import { Resident } from "@/lib/schema";
 
@@ -14,6 +15,7 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get("video");
+    const location = String(form.get("location") ?? "").trim().slice(0, 200) || null;
     let resident: Resident | null = null;
     try {
       resident = Resident.safeParse(JSON.parse(String(form.get("resident") ?? "null"))).data ?? null;
@@ -27,9 +29,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "That video is too large. Try a clip under 60 seconds." }, { status: 413 });
     }
     await ensureDirs();
+    const bytes = Buffer.from(await file.arrayBuffer());
+
+    // Same video uploaded again: reuse the existing report (and its saved video) instead of a new one.
+    const hash = crypto.createHash("sha256").update(bytes).digest("hex");
+    const indexFile = path.join(DATA_DIR, "video-index.json");
+    let index: Record<string, string> = {};
+    try {
+      index = JSON.parse(await fs.readFile(indexFile, "utf8"));
+    } catch {}
+    const existingId = index[hash];
+    const existing = existingId ? await readReport(existingId) : null;
+    if (existing && (await exists(videoPath(existing.id)))) {
+      const sameResident = JSON.stringify(existing.resident ?? null) === JSON.stringify(resident ?? null);
+      if (!sameResident) {
+        // Different person: keep the video, clear results so it re-checks for them.
+        await writeReport({ ...existing, resident, hazards: [], prices: {}, clips: {}, local: {}, funding: null });
+      }
+      return NextResponse.json({ id: existing.id, duplicate: true, rechecking: !sameResident });
+    }
+
     const id = newId();
     const raw = path.join(UPLOADS, `${id}-raw`);
-    await fs.writeFile(raw, Buffer.from(await file.arrayBuffer()));
+    await fs.writeFile(raw, bytes);
     await compress(raw, videoPath(id));
     await fs.unlink(raw).catch(() => {});
 
@@ -43,7 +65,14 @@ export async function POST(req: Request) {
       hazards: [],
       prices: {},
       clips: {},
+      location,
+      location_geo: null,
+      location_area: null,
+      funding: null,
+      local: {},
     });
+    index[hash] = id;
+    await fs.writeFile(indexFile, JSON.stringify(index, null, 2));
     return NextResponse.json({ id });
   } catch (err) {
     console.error(err);

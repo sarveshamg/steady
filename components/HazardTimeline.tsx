@@ -32,7 +32,9 @@ export function HazardTimeline(props: {
               aria-label={`${h.title} at ${fmtTime(h.timestamp_s)}`}
               className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow transition ${
                 PRIORITY_STYLE[h.priority].dot
-              } ${selected ? "h-6 w-6 ring-4 ring-ink/15" : "h-4 w-4 hover:h-5 hover:w-5"}`}
+              } ${selected ? "h-6 w-6 ring-4 ring-ink/15" : "h-4 w-4 hover:h-5 hover:w-5"} ${
+                h.confidence < 0.75 && !selected ? "opacity-35" : ""
+              }`}
               style={{ left: `${left}%` }}
             />
           );

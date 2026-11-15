@@ -5,6 +5,10 @@ import type { Hazard, Price, Report } from "@/lib/schema";
 import { HazardTimeline } from "./HazardTimeline";
 import { BeforeAfter } from "./BeforeAfter";
 import { YouTubePlayer, type YouTubeHandle } from "./YouTubePlayer";
+import { LocalHelp } from "./LocalHelp";
+import { SimplePlan } from "./SimplePlan";
+import { ShareButton } from "./ShareButton";
+import { ListenCard } from "./ListenCard";
 import { PRIORITY_LABEL, PRIORITY_STYLE, fmtMoney, fmtTime } from "./ui";
 import { searchLinks } from "@/lib/shopping";
 import { DEFAULT_RESIDENT, ResidentForm, describeResident } from "./ResidentForm";
@@ -22,6 +26,10 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 export function ReportView({ id }: { id: string }) {
   const video = useRef<HTMLVideoElement>(null);
   const yt = useRef<YouTubeHandle>(null);
+  const [seenBefore, setSeenBefore] = useState(false);
+  useEffect(() => {
+    setSeenBefore(new URLSearchParams(window.location.search).get("seen") === "1");
+  }, []);
   const [report, setReport] = useState<Report | null>(null);
   const [status, setStatus] = useState<"analyzing" | "ready" | "error">("analyzing");
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +50,8 @@ export function ReportView({ id }: { id: string }) {
     try {
       const r = await post<Report>("/api/analyze", resident ? { id, force, resident } : { id, force });
       setReport(r);
-      setSelectedId(r.hazards[0]?.id ?? null);
+      setSelectedId((r.hazards.find((h) => h.confidence >= 0.75) ?? r.hazards[0])?.id ?? null);
+      setTab("plan");
       setStatus("ready");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analysis failed");
@@ -50,7 +59,12 @@ export function ReportView({ id }: { id: string }) {
     }
   }, [id]);
 
+  // React StrictMode runs effects twice in dev; without this guard every visit sent two paid
+  // Gemini calls.
+  const started = useRef<string | null>(null);
   useEffect(() => {
+    if (started.current === id) return;
+    started.current = id;
     fetch(`/api/analyze?id=${encodeURIComponent(id)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((r: Report | null) => {
@@ -66,7 +80,8 @@ export function ReportView({ id }: { id: string }) {
     if (!report || status !== "ready") return;
     let cancelled = false;
     (async () => {
-      for (const h of report.hazards) {
+      const ordered = [...report.hazards].sort((a, b) => b.confidence - a.confidence);
+      for (const h of ordered) {
         if (cancelled || report.prices[h.id]) continue;
         setPricing((p) => ({ ...p, [h.id]: true }));
         try {
@@ -86,12 +101,24 @@ export function ReportView({ id }: { id: string }) {
   }, [report?.hazards, status, id]);
 
   const selected = report?.hazards.find((h) => h.id === selectedId) ?? null;
+  const SURE = 0.75;
+  const [tab, setTab] = useState<"plan" | "safety" | "condition">("plan");
+  const ofKind = (k: "safety" | "condition") => report?.hazards.filter((h) => (h.kind ?? "safety") === k) ?? [];
+  const inTab = tab === "plan" ? [] : ofKind(tab);
+  const showPlan = tab === "plan" && status === "ready" && !!report;
+  const detailsTop = useRef<HTMLDivElement>(null);
+  const confident = inTab.filter((h) => h.confidence >= SURE);
+  const unsure = inTab.filter((h) => h.confidence < SURE);
+  const countSure = (k: "safety" | "condition") => ofKind(k).filter((h) => h.confidence >= SURE).length;
+  const [showUnsure, setShowUnsure] = useState(false);
 
   const totals = useMemo(() => {
     if (!report) return null;
     const prices = report.hazards.map((h) => report.prices[h.id]).filter(Boolean) as Price[];
     return {
-      urgent: report.hazards.filter((h) => h.priority === "urgent").length,
+      urgent: report.hazards.filter((h) => (h.kind ?? "safety") === "safety" && h.priority === "urgent" && h.confidence >= 0.75).length,
+      sure: report.hazards.filter((h) => (h.kind ?? "safety") === "safety" && h.confidence >= 0.75).length,
+      condition: report.hazards.filter((h) => h.kind === "condition" && h.confidence >= 0.75).length,
       low: prices.reduce((s, p) => s + p.cost_low_usd, 0),
       high: prices.reduce((s, p) => s + p.cost_high_usd, 0),
       priced: prices.length,
@@ -108,6 +135,16 @@ export function ReportView({ id }: { id: string }) {
       video.current.pause();
     }
   }
+
+  /** "More info" from the Simple plan: open the finding's tab and jump to it in the video. */
+  function moreInfo(h: Hazard) {
+    setTab(h.kind ?? "safety");
+    select(h);
+    requestAnimationFrame(() => detailsTop.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  const resetLocation = (loc: string) =>
+    setReport((r) => (r ? { ...r, location: loc, location_geo: null, location_area: null, local: {}, funding: null } : r));
 
   async function visualize(h: Hazard) {
     setVisualizing(h.id);
@@ -137,6 +174,12 @@ export function ReportView({ id }: { id: string }) {
 
   return (
     <div className="space-y-6">
+      {seenBefore && (
+        <div className="rounded-2xl bg-nice-soft px-4 py-3 text-sm text-ink">
+          You&apos;ve checked this video before, so this is the saved report. To check it for someone else, use
+          “Change who lives here”.
+        </div>
+      )}
       <SummaryBar status={status} report={report} totals={totals} onRerun={() => analyze(true)} />
       <div className="rounded-2xl bg-card p-4 ring-1 ring-line">
         {editingResident ? (
@@ -184,7 +227,45 @@ export function ReportView({ id }: { id: string }) {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      {report && status !== "analyzing" && (
+        <div ref={detailsTop} className="flex flex-wrap gap-3 scroll-mt-4" role="tablist" aria-label="Report views">
+          {(["plan", "safety", "condition"] as const).map((k) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => {
+                setTab(k);
+                if (k === "plan") return;
+                const first = ofKind(k).sort((a, b) => b.confidence - a.confidence)[0];
+                if (first) select(first);
+              }}
+              className={`min-h-12 rounded-full px-5 text-lg font-semibold ${
+                tab === k ? "bg-ink text-white" : "bg-card ring-1 ring-line hover:ring-ink/30"
+              }`}
+            >
+              {k === "plan" ? "Simple plan" : k === "safety" ? "Safety" : "Home condition"}
+              {k !== "plan" && ` (${countSure(k)})`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showPlan && report && (
+        <SimplePlan
+          report={report}
+          pricing={pricing}
+          actions={<ShareButton reportId={id} />}
+          top={<ListenCard reportId={id} />}
+          onMoreInfo={moreInfo}
+          onLocationSaved={resetLocation}
+          onFunding={(funding) => setReport((r) => (r ? { ...r, funding } : r))}
+          onLocal={(help) => setReport((r) => (r ? { ...r, local: { ...r.local, [help.hazard_id]: help } } : r))}
+        />
+      )}
+
+      {/* Kept mounted (just hidden) on the plan tab so "More info" can seek the player immediately. */}
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]" hidden={showPlan}>
         <section className="rounded-3xl bg-card p-4 shadow-sm ring-1 ring-line">
           {report?.source.type === "youtube" ? (
             <YouTubePlayer ref={yt} videoId={report.source.videoId} onDuration={setDuration} onTime={setCurrent} />
@@ -203,7 +284,7 @@ export function ReportView({ id }: { id: string }) {
           )}
           {report && (
             <HazardTimeline
-              hazards={report.hazards}
+              hazards={inTab}
               duration={duration || report.duration_s || 0}
               current={current}
               selectedId={selectedId}
@@ -220,6 +301,13 @@ export function ReportView({ id }: { id: string }) {
               vizError={vizError}
               budget={budget}
               isYouTube={report?.source.type === "youtube"}
+              reportId={id}
+              location={report?.location ?? null}
+              local={report?.local?.[selected.id]}
+              onLocation={resetLocation}
+              onLocalLoaded={(help) =>
+                setReport((r) => (r ? { ...r, local: { ...r.local, [help.hazard_id]: help } } : r))
+              }
               onVisualize={() => visualize(selected)}
               onRetryPrice={() => retryPrice(selected)}
             />
@@ -232,19 +320,46 @@ export function ReportView({ id }: { id: string }) {
               ? "Looking for hazards…"
               : status === "error"
                 ? "No results yet"
-                : `${report?.hazards.length ?? 0} things to look at`}
+                : confident.length === 0
+                  ? tab === "safety"
+                    ? "No clear safety hazards"
+                    : "No clear condition problems"
+                  : `${confident.length} ${confident.length === 1 ? "thing" : "things"} to look at`}
           </h2>
           {status === "analyzing" && <SkeletonList />}
-          {report?.hazards.map((h) => (
-            <HazardRow
-              key={h.id}
-              hazard={h}
-              price={report.prices[h.id]}
-              pricing={!!pricing[h.id]}
-              selected={h.id === selectedId}
-              onClick={() => select(h)}
-            />
-          ))}
+          {report &&
+            confident.map((h) => (
+              <HazardRow
+                key={h.id}
+                hazard={h}
+                price={report.prices[h.id]}
+                pricing={!!pricing[h.id]}
+                selected={h.id === selectedId}
+                onClick={() => select(h)}
+              />
+            ))}
+          {report && unsure.length > 0 && (
+            <div className="pt-2">
+              <button onClick={() => setShowUnsure((v) => !v)} className="text-sm text-muted underline">
+                {showUnsure ? "Hide" : "Show"} {unsure.length} {unsure.length === 1 ? "thing" : "things"} worth a second
+                look
+              </button>
+              {showUnsure && (
+                <div className="mt-3 space-y-3 opacity-80">
+                  {unsure.map((h) => (
+                    <HazardRow
+                      key={h.id}
+                      hazard={h}
+                      price={report.prices[h.id]}
+                      pricing={!!pricing[h.id]}
+                      selected={h.id === selectedId}
+                      onClick={() => select(h)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {status === "ready" && report?.hazards.length === 0 && (
             <p className="rounded-2xl bg-sage-soft p-4">
               No hazards found in this clip. Try filming the bathroom, stairs, or the path to the bedroom at night.
@@ -259,25 +374,36 @@ export function ReportView({ id }: { id: string }) {
 function SummaryBar(props: {
   status: string;
   report: Report | null;
-  totals: { urgent: number; low: number; high: number; priced: number } | null;
+  totals: { urgent: number; sure: number; condition: number; low: number; high: number; priced: number } | null;
   onRerun: () => void;
 }) {
   const { status, report, totals } = props;
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="text-sm font-semibold uppercase tracking-wider text-sage">Room check</p>
+        <p className="text-sm font-semibold uppercase tracking-wider text-sage">Home check</p>
         <h1 className="text-3xl font-bold">
           {status === "analyzing"
             ? "Watching your walkthrough…"
             : status === "error"
               ? "Couldn't check this walkthrough"
-              : report && report.hazards.length > 0
-              ? `${report.hazards.length} hazards, ${totals?.urgent ?? 0} to fix now`
-              : "Walkthrough checked"}
+              : report && (totals?.sure ?? 0) > 0
+                ? `${totals!.sure} ${totals!.sure === 1 ? "hazard" : "hazards"}${
+                    totals!.urgent > 0 ? `, ${totals!.urgent} to fix now` : ", none urgent"
+                  }`
+                : report && report.hazards.length > 0
+                  ? "No clear safety hazards"
+                  : "No clear hazards found"}
         </h1>
+        {status === "analyzing" && (
+          <p className="text-muted">
+            {report?.source.type === "youtube"
+              ? "YouTube tours can take up to 2 minutes."
+              : "This usually takes under a minute."}
+          </p>
+        )}
         {report && report.rooms_covered.length > 0 && (
-          <p className="text-muted">Rooms seen: {report.rooms_covered.join(", ")}</p>
+          <p className="text-muted">Rooms seen: {report.rooms_covered.map((r) => r.replace(/[_-]+/g, " ")).join(", ")}</p>
         )}
       </div>
       <div className="flex items-center gap-4">
@@ -314,9 +440,8 @@ function HazardRow(props: { hazard: Hazard; price?: Price; pricing: boolean; sel
           {PRIORITY_LABEL[h.priority]}
         </span>
         <span className="text-muted">
-          {h.room} · {fmtTime(h.timestamp_s)}
+          {h.room.replace(/[_-]+/g, " ")} · {fmtTime(h.timestamp_s)}
         </span>
-        {h.confidence < 0.5 && <span className="text-muted">· worth a second look</span>}
         {h.personal_note && <span className="font-semibold text-soon">· matters for them</span>}
       </div>
       <p className="font-semibold">{h.title}</p>
@@ -340,10 +465,16 @@ function HazardDetail(props: {
   vizError: string | null;
   budget: Budget | null;
   isYouTube: boolean;
+  reportId: string;
+  location: string | null;
+  local?: import("@/lib/schema").LocalHelp;
+  onLocation: (loc: string) => void;
+  onLocalLoaded: (help: import("@/lib/schema").LocalHelp) => void;
   onVisualize: () => void;
   onRetryPrice: () => void;
 }) {
   const { hazard: h, price, clip, budget } = props;
+  const frameUrl = props.isYouTube ? null : `/api/frame/${props.reportId}?t=${h.timestamp_s}`;
   return (
     <div className="mt-5 space-y-4 border-t border-line pt-5">
       <div>
@@ -351,7 +482,32 @@ function HazardDetail(props: {
           {PRIORITY_LABEL[h.priority]}
         </span>
         <h2 className="mt-2 text-2xl font-bold">{h.title}</h2>
+        {h.evidence && (
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start">
+            {frameUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={frameUrl}
+                alt={`Video frame at ${fmtTime(h.timestamp_s)}: ${h.evidence}`}
+                className="w-full rounded-xl ring-1 ring-line sm:w-56"
+              />
+            )}
+            <p className="text-sm">
+              <span className="font-semibold">What we saw{frameUrl ? ` at ${fmtTime(h.timestamp_s)}` : ""}: </span>
+              {h.evidence}
+              {h.verified === true && (
+                <span className="mt-1 block text-xs font-semibold text-sage">✓ Double-checked against the video</span>
+              )}
+              {h.verified === false && (
+                <span className="mt-1 block text-xs text-muted">Not double-checked (the check didn't finish). Confirm in person.</span>
+              )}
+            </p>
+          </div>
+        )}
         <p className="mt-1 text-muted">{h.why_it_matters}</p>
+        {h.confidence < 0.75 && (
+          <p className="mt-1 text-xs text-muted">Less certain from the video. Worth checking in person.</p>
+        )}
         {h.personal_note && (
           <p className="mt-2 rounded-xl bg-soon-soft px-3 py-2 text-sm text-ink">
             <span className="font-semibold">For them: </span>
@@ -404,6 +560,15 @@ function HazardDetail(props: {
       </div>
 
       <WhereToBuy hazard={h} price={price} />
+
+      <LocalHelp
+        reportId={props.reportId}
+        hazard={h}
+        location={props.location}
+        cached={props.local}
+        onLocation={props.onLocation}
+        onLoaded={props.onLocalLoaded}
+      />
 
       <div>
         {props.isYouTube ? (

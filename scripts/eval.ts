@@ -38,7 +38,9 @@ async function main() {
   for (const clip of clips) {
     const tmp = path.join(os.tmpdir(), `steady-eval-${path.basename(clip)}.mp4`);
     await compress(path.join(dir, clip), tmp);
-    const { hazards } = await analyzeVideo(tmp);
+    const { hazards: all } = await analyzeVideo(tmp);
+    // Labels cover safety hazards; condition findings are scored separately (not yet labelled).
+    const hazards = all.filter((h) => (h.kind ?? "safety") === "safety");
     const truth = labels.filter((l) => l.clip === clip);
     const used = new Set<string>();
     let clipCaught = 0;
