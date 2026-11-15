@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Steady</title>
+  <path d="M8 29 L32 9 L56 29 V55 H8 Z" fill="none" stroke="#14213D" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M15 52 V42 H29 V32 H49 V52 Z" fill="#2A5BD7"/>
+</svg>

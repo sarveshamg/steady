@@ -17,13 +17,18 @@ export async function GET(req: Request) {
       ? NextResponse.json(clean(report))
       : NextResponse.json({ error: "Report not found." }, { status: 404 });
   } catch {
-    return NextResponse.json({ error: "Bad id." }, { status: 400 });
+    return NextResponse.json({ error: "That report link isn't valid." }, { status: 400 });
   }
 }
 
 function friendly(err: unknown) {
   const msg = String(err instanceof Error ? err.message : err);
-  if (msg.includes("OVERLOADED: ")) return msg.slice(msg.indexOf("OVERLOADED: ") + "OVERLOADED: ".length);
+  if (/\b429\b|RESOURCE_EXHAUSTED|quota/i.test(msg)) {
+    return "The Gemini API key is out of quota (YouTube links use the API key, not the Google Cloud credit). Try an uploaded video instead.";
+  }
+  if (msg.includes("OVERLOADED: ")) {
+    return msg.slice(msg.indexOf("OVERLOADED: ") + "OVERLOADED: ".length).replace(/\s*\[cause:[\s\S]*$/, "");
+  }
   if (msg.startsWith("YOUTUBE_NEEDS_KEY: ")) return msg.slice("YOUTUBE_NEEDS_KEY: ".length);
   if (/default credentials/i.test(msg)) {
     return "Google Cloud login missing on this computer. In Terminal run: gcloud auth application-default login (then restart npm run dev).";
@@ -32,15 +37,15 @@ function friendly(err: unknown) {
     return "The Gemini model ID wasn't found. Check ANALYSIS_MODEL in .env.local against Vertex AI Model Garden.";
   }
   if (/ANALYSIS_TIMEOUT/.test(msg)) {
-    return "Gemini took too long to answer. It's usually busy on Google's side; wait a minute and press Re-run analysis.";
+    return "Gemini took too long to answer. Wait a minute and try again.";
   }
   if (/\b503\b|UNAVAILABLE|high demand/i.test(msg)) {
-    return "Gemini is busy right now (on Google's side). Wait a minute and press Re-run analysis.";
+    return "Gemini is busy right now. Wait a minute and try again.";
   }
   if (/permission|403/i.test(msg)) {
     return "Google Cloud refused the request. Check that GOOGLE_CLOUD_PROJECT=steady-devfest and that your login has access to it.";
   }
-  return `Analysis failed: ${msg}`;
+  return "Couldn't check this video. Try again in a minute.";
 }
 
 export async function POST(req: Request) {

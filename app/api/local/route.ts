@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     }
     if (msg === "MAPS_KEY_MISSING") {
       return NextResponse.json(
-        { error: "Local search isn't set up yet (GOOGLE_MAPS_API_KEY missing in .env.local)." },
+        { error: "Local business search isn't set up on this computer yet." },
         { status: 500 },
       );
     }

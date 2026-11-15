@@ -91,7 +91,7 @@ async function runAnalysis(
   }
   throw new Error(
     isOverloaded(lastError)
-      ? "OVERLOADED: Gemini is busy right now. Wait a minute and try again."
+      ? `OVERLOADED: Gemini is busy right now. Wait a minute and try again. [cause: ${String(lastError).slice(0, 600)}]`
       : `Analysis failed after retry: ${String(lastError)}`,
   );
 }

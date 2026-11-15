@@ -4,6 +4,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Resident } from "@/lib/schema";
 import { DEFAULT_RESIDENT, ResidentForm } from "@/components/ResidentForm";
+import { CheckIcon } from "@/components/icons";
+import { StairsIllustration } from "@/components/StairsIllustration";
+import { Hero } from "@/components/Hero";
+import { HowItWorks } from "@/components/HowItWorks";
+import { useReveal } from "@/hooks/useReveal";
+import { Button, Panel, TextInput, buttonClass } from "@/components/ui";
 
 export default function UploadPage() {
   const router = useRouter();
@@ -12,27 +18,18 @@ export default function UploadPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [ytUrl, setYtUrl] = useState("");
   const [resident, setResident] = useState<Resident>(DEFAULT_RESIDENT);
   const [location, setLocation] = useState("");
 
-  async function submitYouTube(e: React.FormEvent) {
-    e.preventDefault();
-    if (!ytUrl.trim()) return;
-    setBusy(true);
-    setError(null);
+  // Below-the-fold reveal for the form header and panel (60ms stagger). Hidden state is set only after mount.
+  const startRef = useReveal<HTMLDivElement>([], { stagger: 60 });
+
+  async function readError(res: Response, fallback: string) {
     try {
-      const res = await fetch("/api/youtube", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: ytUrl, resident, location }),
-      });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "That link didn't work");
-      router.push(`/report/${json.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "That link didn't work");
-      setBusy(false);
+      return typeof json.error === "string" ? json.error : fallback;
+    } catch {
+      return fallback;
     }
   }
 
@@ -46,135 +43,147 @@ export default function UploadPage() {
       body.append("resident", JSON.stringify(resident));
       if (location.trim()) body.append("location", location.trim());
       const res = await fetch("/api/upload", { method: "POST", body });
+      if (!res.ok) throw new Error(await readError(res, "The upload didn't work. Try again."));
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Upload failed");
       router.push(`/report/${json.id}${json.duplicate ? "?seen=1" : ""}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload failed");
+      setError(e instanceof Error ? e.message : "The upload didn't work. Try again.");
       setBusy(false);
     }
   }
 
   return (
-    <div className="grid gap-10 md:grid-cols-[1.1fr_1fr] md:items-center">
-      <section>
-        <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-sage">For families of older adults</p>
-        <h1 className="mb-4 text-4xl font-bold leading-tight md:text-5xl">
-          Film your home.
-          <br />
-          See what could cause a fall.
-        </h1>
-        <p className="mb-6 max-w-prose text-lg text-muted">
-          Most falls at home start with something small: a loose rug, a dark hallway, nothing to hold onto by the
-          tub. Steady watches a short walkthrough, points out each risk, explains the fix and what it costs, and
-          shows the fix in your own room.
-        </p>
-        <div className="mb-6 rounded-2xl bg-card p-4 ring-1 ring-line">
-          <ResidentForm value={resident} onChange={setResident} />
-          <p className="mt-3 text-xs text-muted">
-            The same rug is a small issue for one person and urgent for someone with a walker.
-          </p>
-          <label htmlFor="location" className="mt-4 block text-sm font-semibold">
-            ZIP code or address <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <input
-            id="location"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            maxLength={200}
-            autoComplete="postal-code"
-            placeholder="e.g. 95064"
-            className="mt-2 w-full rounded-full border border-line bg-paper px-4 py-2 text-sm"
-          />
-          <p className="mt-1 text-xs text-muted">
-            Used only to find local businesses that can help with each fix. A ZIP code is enough.
-          </p>
-        </div>
-        <ol className="space-y-2 text-muted">
-          <li><span className="font-semibold text-ink">1.</span> Walk slowly through one room, 20 to 45 seconds.</li>
-          <li><span className="font-semibold text-ink">2.</span> Show the floor, the walls, and anything you hold onto.</li>
-          <li><span className="font-semibold text-ink">3.</span> Keep people out of the shot.</li>
-        </ol>
-      </section>
+    <div className="space-y-16 sm:space-y-24">
+      <Hero />
+      <HowItWorks />
 
-      <section
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          const f = e.dataTransfer.files?.[0];
-          if (f) setFile(f);
-        }}
-        className={`rounded-3xl border-2 border-dashed p-8 text-center transition ${
-          dragging ? "border-sage bg-sage-soft" : "border-line bg-card"
-        }`}
-      >
-        <input
-          ref={input}
-          type="file"
-          accept="video/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-sage-soft text-3xl" aria-hidden>
-          ▶
-        </div>
-        <p className="mb-1 text-lg font-semibold">{file ? file.name : "Drop a walkthrough video here"}</p>
-        <p className="mb-6 text-sm text-muted">
-          {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "or record one on your phone"}
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            onClick={() => input.current?.click()}
-            className="rounded-full border border-line px-6 py-3 font-semibold hover:bg-paper"
-            disabled={busy}
-          >
-            {file ? "Choose another" : "Choose or record video"}
-          </button>
+      <div id="start" ref={startRef} className="mx-auto max-w-[640px] scroll-mt-6 space-y-8">
+      <div className="space-y-2" data-reveal-item>
+        <h2 className="text-2xl">Check a home</h2>
+        <p className="text-lg text-muted">Three quick steps. It usually takes under a minute.</p>
+      </div>
+
+      <Panel padding="lg" data-reveal-item>
+        <ol className="space-y-8">
+          <Step n={1} title="Who lives here" titleId="step-who">
+            <ResidentForm value={resident} onChange={setResident} hideLegend />
+          </Step>
+
+          <Step n={2} title="ZIP code" titleId="step-zip" optional>
+            <div className="space-y-2">
+              <label htmlFor="location" className="sr-only">
+                ZIP code
+              </label>
+              <TextInput
+                id="location"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                maxLength={200}
+                autoComplete="postal-code"
+                placeholder="95064"
+                className="max-w-xs"
+                aria-describedby="location-hint"
+              />
+              <p id="location-hint" className="text-sm text-muted">
+                Used only to find local help.
+              </p>
+            </div>
+          </Step>
+
+          <Step n={3} title="Add a walkthrough video" titleId="step-video">
+            <div className="space-y-2">
+              <div
+                role="group"
+                aria-labelledby="step-video"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) setFile(f);
+                }}
+                className={`flex flex-col items-center gap-4 rounded-lg border border-dashed p-6 text-center transition-colors duration-150 ${
+                  dragging ? "border-primary bg-primary-soft" : file ? "border-success bg-success-soft" : "border-line-strong bg-page"
+                }`}
+              >
+                <input
+                  ref={input}
+                  type="file"
+                  accept="video/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+                {file ? (
+                  <span className="grid h-12 w-12 place-content-center rounded-full bg-success text-on-primary" aria-hidden>
+                    <CheckIcon className="h-6 w-6" />
+                  </span>
+                ) : (
+                  <StairsIllustration />
+                )}
+                <div>
+                  <p className="font-semibold">{file ? file.name : "Drop a video here, or record one on your phone"}</p>
+                  <p className="text-sm text-muted tabular-nums">
+                    {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Under a minute. Keep people out of the shot."}
+                  </p>
+                </div>
+                <Button variant="secondary" onClick={() => input.current?.click()} disabled={busy}>
+                  {file ? "Choose another" : "Choose or record"}
+                </Button>
+              </div>
+              <p className="text-sm text-muted">Walk slowly. Show floors, stairs and anything you hold onto.</p>
+            </div>
+          </Step>
+        </ol>
+
+        <div className="mt-8 space-y-2 border-t border-line pt-6">
           <button
             type="button"
             onClick={submit}
             disabled={!file || busy}
-            className="rounded-full bg-sage px-6 py-3 font-semibold text-white disabled:opacity-40"
+            className={buttonClass("primary", "lg", true)}
+            aria-describedby={!file ? "check-hint" : undefined}
           >
             {busy ? "Preparing video…" : "Check this home"}
           </button>
+          {!file && (
+            <p id="check-hint" className="text-sm text-muted">
+              Add a video to continue.
+            </p>
+          )}
+          {error && (
+            <p className="rounded-md bg-urgent-soft px-3 py-2 font-medium text-urgent" role="alert">
+              {error}
+            </p>
+          )}
         </div>
-        <form onSubmit={submitYouTube} className="mt-8 border-t border-line pt-6 text-left">
-          <label htmlFor="yt" className="mb-2 block text-sm font-semibold">
-            Or paste a YouTube link to a home tour
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              id="yt"
-              type="url"
-              inputMode="url"
-              placeholder="https://www.youtube.com/watch?v=…"
-              value={ytUrl}
-              onChange={(e) => setYtUrl(e.target.value)}
-              className="min-w-0 flex-1 rounded-full border border-line bg-paper px-4 py-3"
-              disabled={busy}
-            />
-            <button
-              type="submit"
-              disabled={!ytUrl.trim() || busy}
-              className="rounded-full bg-ink px-6 py-3 font-semibold text-white disabled:opacity-40"
-            >
-              Check video
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-muted">
-            Public videos only. The first 5 minutes are checked. Before/after views need your own upload.
-          </p>
-        </form>
-        {error && <p className="mt-4 text-urgent">{error}</p>}
-      </section>
+      </Panel>
+
+      </div>
     </div>
+  );
+}
+
+function Step(props: { n: number; title: string; titleId: string; optional?: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex gap-4" aria-labelledby={props.titleId}>
+      <span
+        className="grid h-8 w-8 shrink-0 place-content-center rounded-full bg-primary-soft font-semibold text-primary tabular-nums"
+        aria-hidden
+      >
+        {props.n}
+      </span>
+      <div className="min-w-0 flex-1 space-y-4">
+        <h2 id={props.titleId} className="pt-1 text-xl">
+          {props.title}
+          {props.optional && <span className="font-normal text-muted"> (optional)</span>}
+        </h2>
+        {props.children}
+      </div>
+    </li>
   );
 }

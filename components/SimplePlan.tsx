@@ -5,20 +5,11 @@ import type { Funding, FundingProgram, Hazard, LocalHelp, Report } from "@/lib/s
 import { bestProgram, buildPlan, callForHelp, firstSentence, programLabel, topPlace } from "@/lib/plan";
 import { reportArea } from "@/lib/area";
 import { searchLinks } from "@/lib/shopping";
-import { fmtMoney } from "./ui";
+import { Button, ButtonLink, Field, Panel, ProgressBar, Tag, TextInput, fmtMiles, fmtRange, postJson } from "./ui";
+import { CheckIcon, ExternalIcon, PhoneIcon, SpinnerIcon } from "./icons";
 
-/* Accessibility baseline for everything in this file: ≥18px text, ≥48px controls, visible focus (globals.css),
-   plain words. */
-const BTN =
-  "inline-flex min-h-12 items-center justify-center rounded-full px-6 text-lg font-semibold focus-visible:outline-3";
-const LINK = "text-lg font-semibold text-sage underline underline-offset-4";
-
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json as T;
-}
+/* Simple plan: large and calm. Text is 18px or larger and controls at least 48px. */
+const post = <T,>(url: string, body: unknown) => postJson<T>(url, body);
 
 const storageKey = (id: string) => `steady-plan-done-${id}`;
 
@@ -39,8 +30,6 @@ function writeDone(id: string, done: string[]) {
     /* private mode / blocked storage: the checkbox still works for this visit */
   }
 }
-
-const fmtMiles = (mi: number) => `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi`;
 
 export function SimplePlan(props: {
   report: Report;
@@ -141,36 +130,29 @@ export function SimplePlan(props: {
 
   const caller = callForHelp(report.funding);
 
+
+
   return (
-    <div className="mx-auto max-w-3xl space-y-8 text-lg leading-relaxed text-ink">
-      {props.top}
+    <div className="mx-auto max-w-3xl space-y-6 text-lg">
+      {props.top && <Panel data-reveal-item>{props.top}</Panel>}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-card p-5 ring-1 ring-line">
-        <div>
-          <h2 className="text-2xl font-bold">Your simple plan</h2>
-          <p className="text-lg text-muted">
-            {all.length === 0
-              ? "Nothing clear to fix from this video."
-              : `${doneCount} of ${all.length} done`}
-            {area ? ` · Near ${area}` : ""}
-          </p>
+      <Panel className="space-y-4" data-reveal-item>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="space-y-1">
+            <h2 className="text-2xl">Your plan</h2>
+            <p className="text-muted tabular-nums">
+              {all.length === 0 ? "Nothing clear to fix from this video." : `${doneCount} of ${all.length} done`}
+              {area ? `, near ${area}` : ""}
+            </p>
+          </div>
+          {props.actions}
         </div>
-        {props.actions}
-      </div>
-      {all.length > 0 && (
-        <div
-          className="h-3 w-full overflow-hidden rounded-full bg-line"
-          role="progressbar"
-          aria-label="Plan progress"
-          aria-valuemin={0}
-          aria-valuemax={all.length}
-          aria-valuenow={doneCount}
-        >
-          <div className="h-full rounded-full bg-sage transition-all" style={{ width: `${(doneCount / all.length) * 100}%` }} />
-        </div>
-      )}
+        {all.length > 0 && (
+          <ProgressBar value={doneCount} max={all.length} label="Plan progress" valueText={`${doneCount} of ${all.length} done`} />
+        )}
+      </Panel>
 
-      <Section title="Do today, free" subtitle="Small changes that cost nothing." empty="Nothing here this time.">
+      <Section title="Do today, free" subtitle="Small changes that cost nothing." count={plan.today.length}>
         {plan.today.map((h) => (
           <Item key={h.id} hazard={h} done={done.includes(h.id)} onToggle={toggle} readOnly={readOnly} onMoreInfo={props.onMoreInfo}>
             <p>{firstSentence(h.fix)}</p>
@@ -180,8 +162,15 @@ export function SimplePlan(props: {
 
       <Section
         title="Under $50, do it yourself"
-        subtitle="Simple fixes you can buy at a hardware store or online."
-        empty={plan.pendingPrice.length > 0 ? null : "Nothing here this time."}
+        subtitle="Simple things to buy and put in."
+        count={plan.cheap.length}
+        pending={
+          plan.pendingPrice.length > 0
+            ? readOnly
+              ? `${plan.pendingPrice.length} more not priced yet.`
+              : `Checking prices for ${plan.pendingPrice.length} more…`
+            : null
+        }
       >
         {plan.cheap.map((h) => {
           const price = report.prices[h.id]!;
@@ -189,72 +178,64 @@ export function SimplePlan(props: {
           return (
             <Item key={h.id} hazard={h} done={done.includes(h.id)} onToggle={toggle} readOnly={readOnly} onMoreInfo={props.onMoreInfo}>
               <p>{firstSentence(h.fix)}</p>
-              <p className="font-semibold">
-                About {fmtMoney(price.cost_low_usd)}–{fmtMoney(price.cost_high_usd)}
+              <p className="font-semibold tabular-nums">
+                {price.cost_low_usd > 0 ? "About " : ""}
+                {fmtRange(price.cost_low_usd, price.cost_high_usd)}
               </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-muted">Find it at</span>
+              <div className="-ml-2 flex flex-wrap items-center gap-x-1">
+                <span className="ml-2 mr-1 text-muted">Find it at</span>
                 {searchLinks(query).map((l) => (
-                  <a
-                    key={l.retailer}
-                    href={l.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex min-h-12 items-center rounded-full border-2 border-line px-4 font-medium hover:bg-paper"
-                    aria-label={`Search ${l.retailer} for ${query} (opens in a new tab)`}
-                  >
+                  <ButtonLink key={l.retailer} href={l.url} external variant="ghost" size="lg" className="font-medium">
                     {l.retailer}
-                  </a>
+                    <ExternalIcon className="h-4 w-4" />
+                  </ButtonLink>
                 ))}
               </div>
             </Item>
           );
         })}
-        {plan.pendingPrice.length > 0 && (
-          <p className="text-muted" role="status">
-            {readOnly
-              ? `${plan.pendingPrice.length} more ${plan.pendingPrice.length === 1 ? "item hasn't" : "items haven't"} been priced yet.`
-              : `Checking prices for ${plan.pendingPrice.length} more ${plan.pendingPrice.length === 1 ? "item" : "items"}…`}
-          </p>
-        )}
       </Section>
 
-      <Section title="Get help with" subtitle="Bigger jobs. Programs near you may pay for these, or do them for you." empty={null}>
+      <Section title="Get help with" subtitle="Bigger jobs. Programs near you may pay for these, or do them." count={plan.help.length}>
         {!report.location && !readOnly && (
-          <form onSubmit={saveLocation} className="space-y-3 rounded-2xl bg-sage-soft p-5">
-            <label htmlFor="plan-location" className="block text-lg font-semibold">
-              Where is the home? We&apos;ll find programs and local help nearby.
-            </label>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <input
-                id="plan-location"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="ZIP code, like 95060"
-                autoComplete="postal-code"
-                maxLength={200}
-                className="min-h-12 min-w-0 flex-1 rounded-full border-2 border-line bg-card px-5 text-lg"
-              />
-              <button type="submit" disabled={!draft.trim() || savingLoc} className={`${BTN} bg-sage text-white disabled:opacity-50`}>
-                {savingLoc ? "Saving…" : "Find help near me"}
-              </button>
-            </div>
-            <p className="text-lg text-muted">A ZIP code is enough. We only use it to search for help nearby.</p>
-            {locError && <p className="text-urgent">{locError}</p>}
+          <form onSubmit={saveLocation} className="py-6">
+            <Field id="plan-location" label="Where is the home?" hint="Used only to find programs and businesses nearby.">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <TextInput
+                  id="plan-location"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="ZIP code"
+                  autoComplete="postal-code"
+                  maxLength={200}
+                  className="min-h-12 min-w-0 flex-1 text-lg"
+                  aria-describedby="plan-location-hint"
+                />
+                <Button type="submit" size="lg" disabled={!draft.trim() || savingLoc}>
+                  {savingLoc ? "Saving…" : "Find help near me"}
+                </Button>
+              </div>
+            </Field>
+            {locError && (
+              <p className="mt-2 font-medium text-urgent" role="alert">
+                {locError}
+              </p>
+            )}
           </form>
         )}
 
         {report.location && (
-          <CallForHelpCard
-            program={caller}
-            loading={fundingState === "loading"}
-            error={fundingState === "error" ? fundingError : null}
-            onRetry={() => loadFunding(true)}
-            readOnly={readOnly}
-          />
+          <div className="-mx-4 sm:-mx-6">
+            <CallForHelpCard
+              program={caller}
+              loading={fundingState === "loading"}
+              error={fundingState === "error" ? fundingError : null}
+              onRetry={() => loadFunding(true)}
+              readOnly={readOnly}
+            />
+          </div>
         )}
 
-        {plan.help.length === 0 && <p className="text-muted">Nothing here this time.</p>}
         {plan.help.map((h) => {
           const program = bestProgram(report.funding, h.id);
           const place = topPlace(report, h.id);
@@ -263,82 +244,93 @@ export function SimplePlan(props: {
             <Item key={h.id} hazard={h} done={done.includes(h.id)} onToggle={toggle} readOnly={readOnly} onMoreInfo={props.onMoreInfo}>
               <p>{firstSentence(h.fix)}</p>
               {price && (
-                <p className="text-muted">
-                  Usually about {fmtMoney(price.cost_low_usd)}–{fmtMoney(price.cost_high_usd)}
-                  {price.includes_installation ? " with installation" : ""}.
+                <p className="text-muted tabular-nums">
+                  {price.cost_low_usd > 0 ? "Usually " : ""}
+                  {fmtRange(price.cost_low_usd, price.cost_high_usd)}
+                  {price.includes_installation ? " installed" : ""}.
                 </p>
               )}
               {program ? (
-                <ProgramBox program={program} />
-              ) : report.funding ? (
-                <p className="rounded-2xl bg-paper p-4 ring-1 ring-line">
-                  Ask your local Area Agency on Aging about help with this.
+                <ProgramBlock program={program} />
+              ) : report.location && !report.funding && fundingState === "loading" ? (
+                <p className="flex items-center gap-2 text-muted" role="status">
+                  <SpinnerIcon className="h-5 w-5" />
+                  Looking for programs that can help…
                 </p>
-              ) : report.location && fundingState === "loading" ? (
-                <p className="text-muted" role="status">Looking for programs that can help…</p>
               ) : (
-                <p className="rounded-2xl bg-paper p-4 ring-1 ring-line">
-                  Ask your local Area Agency on Aging about help with this.
-                </p>
+                <p className="rounded-md bg-page px-4 py-3">Ask your local Area Agency on Aging about help with this.</p>
               )}
               {place ? (
-                <div className="rounded-2xl bg-paper p-4 ring-1 ring-line">
-                  <p className="text-lg font-semibold uppercase tracking-wide text-muted">Local business</p>
-                  <p className="font-semibold">
+                <div className="space-y-1">
+                  <p className="font-semibold">Local business</p>
+                  <p>
                     {place.name}
-                    {typeof place.distance_mi === "number" && (
-                      <span className="font-normal text-muted"> · {fmtMiles(place.distance_mi)} away</span>
-                    )}
+                    <span className="text-muted tabular-nums">
+                      {[
+                        typeof place.distance_mi === "number" ? `${fmtMiles(place.distance_mi)} away` : null,
+                        typeof place.rating === "number" ? `${place.rating.toFixed(1)} stars` : null,
+                      ]
+                        .filter(Boolean)
+                        .map((x) => `, ${x}`)
+                        .join("")}
+                    </span>
                   </p>
-                  {typeof place.rating === "number" && (
-                    <p className="text-muted">
-                      {place.rating.toFixed(1)} stars
-                      {typeof place.reviews === "number" ? ` (${place.reviews.toLocaleString()} reviews)` : ""}
-                    </p>
-                  )}
-                  <div className="mt-1 flex flex-wrap gap-x-5 gap-y-2">
+                  <div className="-ml-2 flex flex-wrap gap-x-2">
                     {place.phone && (
-                      <a href={`tel:${place.phone.replace(/[^\d+]/g, "")}`} className={`${LINK} inline-flex min-h-12 items-center`}>
+                      <ButtonLink href={`tel:${place.phone.replace(/[^\d+]/g, "")}`} variant="ghost" size="lg" className="whitespace-nowrap tabular-nums">
+                        <PhoneIcon />
                         Call {place.phone}
-                      </a>
+                      </ButtonLink>
                     )}
                     {place.maps_url && (
-                      <a href={place.maps_url} target="_blank" rel="noreferrer" className={`${LINK} inline-flex min-h-12 items-center`}>
-                        View on Google Maps
-                      </a>
+                      <ButtonLink
+                        href={place.maps_url}
+                        external
+                        variant="ghost"
+                        size="lg"
+                        aria-label={`${place.name} on Google Maps (opens in a new tab)`}
+                      >
+                        Google Maps
+                        <ExternalIcon className="h-4 w-4" />
+                      </ButtonLink>
                     )}
                   </div>
-                  <p className="text-lg text-muted">Business info from Google Maps.</p>
+                  <p className="text-muted">Business info from Google Maps.</p>
                 </div>
               ) : localLoading[h.id] ? (
-                <p className="text-muted" role="status">Finding a local business…</p>
+                <p className="flex items-center gap-2 text-muted" role="status">
+                  <SpinnerIcon className="h-5 w-5" />
+                  Finding a local business…
+                </p>
               ) : null}
             </Item>
           );
         })}
       </Section>
-
-      <p className="text-lg text-muted">
-        Steady is a starting point, not a professional assessment. Programs and prices change: check with each program
-        before you count on it. For electrical, gas, plumbing or structural work, use a licensed professional.
-      </p>
     </div>
   );
 }
 
-function Section(props: { title: string; subtitle: string; empty: string | null; children: ReactNode }) {
-  const kids = Array.isArray(props.children) ? props.children.flat().filter(Boolean) : props.children ? [props.children] : [];
+function Section(props: { title: string; subtitle: string; count: number; pending?: string | null; children: ReactNode }) {
   const id = `plan-${props.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <section aria-labelledby={id} className="space-y-4">
-      <div>
-        <h3 id={id} className="text-2xl font-bold">
+    <Panel as="section" padding="none" aria-labelledby={id} data-reveal-item>
+      <div className="border-b border-line px-6 py-4 sm:px-6">
+        <h3 id={id} className="text-2xl">
           {props.title}
         </h3>
-        <p className="text-lg text-muted">{props.subtitle}</p>
+        <p className="text-muted">{props.subtitle}</p>
       </div>
-      {kids.length === 0 && props.empty ? <p className="text-muted">{props.empty}</p> : props.children}
-    </section>
+      <div className="divide-y divide-line px-6 sm:px-6">
+        {props.children}
+        {props.count === 0 && !props.pending && <p className="py-6 text-muted">Nothing here this time.</p>}
+      </div>
+      {props.pending && (
+        <p className="flex items-center gap-2 border-t border-line px-6 py-4 text-muted sm:px-6" role="status">
+          {props.pending}
+        </p>
+      )}
+    </Panel>
   );
 }
 
@@ -353,75 +345,87 @@ function Item(props: {
   const { hazard: h, done } = props;
   const box = `done-${h.id}`;
   return (
-    <div className={`rounded-3xl bg-card p-5 ring-1 ring-line ${done ? "opacity-70" : ""}`}>
-      <div className="flex items-start gap-4">
-        <input
-          id={box}
-          type="checkbox"
-          checked={done}
-          disabled={props.readOnly}
-          onChange={() => props.onToggle(h.id)}
-          className="mt-1 h-8 w-8 shrink-0 cursor-pointer accent-[#2f6b4f] disabled:cursor-default"
-        />
-        <div className="min-w-0 flex-1 space-y-3">
-          <label htmlFor={box} className={`block cursor-pointer text-xl font-semibold ${done ? "line-through" : ""}`}>
+    <div data-reveal-item className="flex items-start gap-4 py-6">
+      <input
+        id={box}
+        type="checkbox"
+        checked={done}
+        disabled={props.readOnly}
+        onChange={() => props.onToggle(h.id)}
+        className="check mt-1 shrink-0"
+      />
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <label htmlFor={box} className={`cursor-pointer text-xl font-semibold ${done ? "text-muted line-through" : ""}`}>
             {h.title}
-            <span className="sr-only">{done ? " (done)" : " (not done yet)"}</span>
           </label>
-          {h.personal_note && <p className="rounded-2xl bg-soon-soft px-4 py-2">{h.personal_note}</p>}
-          {props.children}
-          {props.onMoreInfo && !props.readOnly && (
-            <button
-              type="button"
-              onClick={() => props.onMoreInfo!(h)}
-              className={`${BTN} border-2 border-line bg-card px-5 hover:bg-paper`}
-              aria-label={`More info about: ${h.title}`}
-            >
-              More info
-            </button>
+          {done && (
+            <Tag tone="success" size="lg">
+              <CheckIcon className="h-4 w-4" />
+              Done
+            </Tag>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ProgramBox({ program: p }: { program: FundingProgram }) {
-  return (
-    <div className="rounded-2xl bg-sage-soft p-4">
-      <p className="inline-block rounded-full bg-sage px-3 py-1 text-lg font-semibold text-white">{programLabel(p)}</p>
-      <p className="mt-2 text-xl font-semibold">{p.name}</p>
-      {p.provider && p.provider !== p.name && <p className="text-muted">{p.provider}</p>}
-      <p className="mt-1">{p.covers}</p>
-      {p.who_qualifies && (
-        <p className="mt-1">
-          <span className="font-semibold">Who may qualify: </span>
-          {p.who_qualifies}
-        </p>
-      )}
-      {p.cost_to_family !== "unknown" && (
-        <p className="mt-1">
-          <span className="font-semibold">Cost to you: </span>
-          {{ free: "Free", reduced: "Reduced cost", reimbursed: "You pay, then get paid back", loan: "A loan", unknown: "" }[p.cost_to_family]}
-          {" "}(says their website)
-        </p>
-      )}
-      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
-        <a href={p.url} target="_blank" rel="noreferrer" className={`${LINK} inline-flex min-h-12 items-center`}>
-          Visit {p.official ? "their official site" : "their website"}
-          <span className="sr-only"> for {p.name} (opens in a new tab)</span>
-        </a>
-        {p.phone && (
-          <a href={`tel:${p.phone.replace(/[^\d+]/g, "")}`} className={`${LINK} inline-flex min-h-12 items-center`}>
-            Call {p.phone}
-          </a>
+        {h.personal_note && <p className="rounded-md bg-primary-soft px-4 py-3">{h.personal_note}</p>}
+        {props.children}
+        {props.onMoreInfo && !props.readOnly && (
+          <Button variant="ghost" size="lg" className="-ml-2" onClick={() => props.onMoreInfo!(h)} aria-label={`More info about ${h.title}`}>
+            More info
+          </Button>
         )}
       </div>
     </div>
   );
 }
 
-/** Part 3: one big card with one number to call. Only the Area Agency on Aging or the Eldercare Locator. */
+const COST_LABEL: Record<FundingProgram["cost_to_family"], string> = {
+  free: "Free",
+  reduced: "Reduced cost",
+  reimbursed: "You pay, then get paid back",
+  loan: "A loan",
+  unknown: "",
+};
+
+/** A verified assistance program. `bare` drops the tinted block (for use as a panel's whole content). */
+export function ProgramBlock({ program: p, bare = false }: { program: FundingProgram; bare?: boolean }) {
+  return (
+    <div className={bare ? "space-y-2" : "space-y-2 rounded-md bg-page px-4 py-4"}>
+      {/* Plan text is ≥18px; the bare version sits in the report detail, which uses the standard size. */}
+      <Tag tone={p.does_the_work ? "success" : "info"} size={bare ? "sm" : "lg"}>
+        {programLabel(p)}
+      </Tag>
+      <p className="font-semibold">{p.name}</p>
+      <p>{p.covers}</p>
+      {p.who_qualifies && (
+        <p>
+          <span className="font-semibold">Who may qualify: </span>
+          {p.who_qualifies}
+        </p>
+      )}
+      {p.cost_to_family !== "unknown" && (
+        <p>
+          <span className="font-semibold">Cost to you: </span>
+          {COST_LABEL[p.cost_to_family]} (per their website)
+        </p>
+      )}
+      <div className="-ml-2 flex flex-wrap gap-x-2">
+        <ButtonLink href={p.url} external variant="ghost" size="lg" aria-label={`${p.name} website (opens in a new tab)`}>
+          {p.official ? "Official site" : "Their website"}
+          <ExternalIcon className="h-4 w-4" />
+        </ButtonLink>
+        {p.phone && (
+          <ButtonLink href={`tel:${p.phone.replace(/[^\d+]/g, "")}`} variant="ghost" size="lg" className="whitespace-nowrap tabular-nums">
+            <PhoneIcon />
+            Call {p.phone}
+          </ButtonLink>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One number to call: the local Area Agency on Aging, or the Eldercare Locator. A full-width primary-soft row
+ *  inside the "Get help with" panel (not a nested panel). */
 export function CallForHelpCard(props: {
   program: FundingProgram | null;
   loading: boolean;
@@ -431,51 +435,53 @@ export function CallForHelpCard(props: {
 }) {
   const p = props.program;
   return (
-    <div className="rounded-3xl bg-ink p-6 text-white shadow-sm" role="region" aria-label="Call for help">
-      <p className="text-lg font-semibold uppercase tracking-wider text-white/80">Call for help</p>
+    <div className="space-y-3 bg-primary-soft px-4 py-6 sm:px-6" role="region" aria-label="Call for help">
+      <p className="flex items-center gap-2 font-semibold text-primary">
+        <PhoneIcon />
+        Call for help
+      </p>
       {p ? (
         <>
-          <p className="mt-1 text-2xl font-bold">{p.name}</p>
-          <p className="mt-2 text-lg text-white/90">
-            They help older adults arrange repairs, home modifications and other services. One call can connect you to the
-            programs above.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
+          <p className="text-2xl font-bold tracking-tight">{p.name}</p>
+          <p>They help older adults arrange repairs, home modifications and other services. One call can connect you to the programs below.</p>
+          <div className="flex flex-wrap gap-3 pt-1">
             {p.phone && (
-              <a
+              <ButtonLink
                 href={`tel:${p.phone.replace(/[^\d+]/g, "")}`}
-                className={`${BTN} min-h-14 bg-white px-8 text-xl text-ink focus-visible:outline-white`}
+                size="lg"
+                className="whitespace-nowrap tabular-nums"
                 aria-label={`Call ${p.name} at ${p.phone}`}
               >
+                <PhoneIcon />
                 Call {p.phone}
-              </a>
+              </ButtonLink>
             )}
-            <a
+            <ButtonLink
               href={p.url}
-              target="_blank"
-              rel="noreferrer"
-              className={`${BTN} border-2 border-white/70 text-white focus-visible:outline-white`}
-              aria-label={`Visit the ${p.name} website (opens in a new tab)`}
+              external
+              size="lg"
+              variant={p.phone ? "secondary" : "primary"}
+              aria-label={`${p.name} website (opens in a new tab)`}
             >
               Visit their website
-            </a>
+              <ExternalIcon className="h-4 w-4" />
+            </ButtonLink>
           </div>
         </>
       ) : props.loading ? (
-        <p className="mt-2 text-lg text-white/90" role="status">
+        <p className="flex items-center gap-2" role="status">
+          <SpinnerIcon className="h-5 w-5 text-primary" />
           Finding your local Area Agency on Aging…
         </p>
       ) : props.error && !props.readOnly ? (
-        <div className="mt-2 space-y-3">
-          <p className="text-lg text-white/90">{props.error}</p>
-          <button type="button" onClick={props.onRetry} className={`${BTN} bg-white text-ink focus-visible:outline-white`}>
+        <div className="space-y-3">
+          <p className="text-urgent">{props.error}</p>
+          <Button size="lg" onClick={props.onRetry}>
             Try again
-          </button>
+          </Button>
         </div>
       ) : (
-        <p className="mt-2 text-lg text-white/90">
-          Your local Area Agency on Aging can help older adults arrange repairs, home modifications and other services.
-        </p>
+        <p>Your local Area Agency on Aging can help arrange repairs, home modifications and other services.</p>
       )}
     </div>
   );

@@ -13,3 +13,8 @@ eval/*.MOV
 eval/*.m4v
 eval/*.webm
 _to_delete
+
+# any env backups or variants (keep .env.example)
+.env*
+!.env.example
+*.bak

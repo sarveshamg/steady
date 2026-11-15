@@ -1,9 +1,7 @@
-# Steady
+<p><img src="public/logo.svg" alt="Steady" width="240" height="64"></p>
 
-Film a room. Steady finds fall hazards, explains each fix, estimates the cost with live
-search results, and shows the fix installed in your own room with Gemini Omni Flash.
-
-Built for DevFest Santa Cruz 2026.
+Film your home. Steady finds fall hazards, explains each fix and what it costs, and shows who can
+help pay. Built for DevFest Santa Cruz 2026.
 
 ## The problem
 
@@ -11,75 +9,77 @@ Older adults often can't afford home repairs, and figuring out what to fix, who 
 pay is overwhelming. Steady turns one video into **one simple plan**:
 
 1. **Do today, free:** move the cord, clear the path.
-2. **Under $50, do it yourself:** with a price range and store links.
-3. **Get help with:** the bigger jobs, each paired with a verified local program that can help pay for it
-   (or do it for you), plus a nearby business, and one big "Call for help" button for the local Area Agency
-   on Aging.
+2. **Under $50, do it yourself:** a price range and store links.
+3. **Get help with:** bigger jobs, each paired with a verified local program that can help pay (or do
+   the work), a nearby business, and one "Call for help" number for the local Area Agency on Aging.
 
-The plan can be read aloud in English, Spanish, Vietnamese, Chinese, Tagalog or Korean, and shared with
-family as a read-only link.
+The plan can be read aloud in English, Spanish, Vietnamese, Chinese, Tagalog or Korean, and shared
+with family as a read-only link.
 
-## Run it (Mac)
+| Simple plan | Report |
+|---|---|
+| ![The Simple plan tab: three sections and the Call for help banner](docs/screenshots/simple-plan.png) | ![The Safety tab: video, hazard timeline and finding detail](docs/screenshots/report.png) |
 
-```bash
-cd ~/Documents/Steady
-npm install
-cp .env.example .env.local
-gcloud auth application-default login     # once; uses the DevFest credit project
-npm run dev
-```
+## How verification works
 
-Open http://localhost:3000 and upload a 20–45 second walkthrough.
+Every finding has to survive three checks before it is shown:
 
-## YouTube links
+1. **Evidence.** Gemini watches the video and must describe what it actually sees for each finding
+   (`evidence`), with a timestamp and a confidence. Findings with no evidence or confidence below 0.5
+   are dropped; anything below 0.75 is shown only under "less certain".
+2. **Second pass.** A separate Gemini request re-watches the video and must confirm each finding is
+   visible where claimed. Unconfirmed findings are removed. If this pass can't run, findings are marked
+   "not double-checked".
+3. **Frame check.** For uploads, real frames around each timestamp are pulled with ffmpeg and checked
+   as images. The frame that shows the problem becomes the frame on screen, so people can judge it
+   themselves.
 
-Paste a public YouTube link on the home page. Gemini analyzes the video by URL (first 5 minutes),
-and the report embeds the YouTube player with the same clickable hazard timeline. Before/after
-views are disabled for YouTube: Omni Flash doesn't accept YouTube sources, and downloading
-YouTube videos would break YouTube's terms. If Vertex rejects YouTube URLs in your project, set
-`GEMINI_API_KEY` and Steady retries through the Gemini API.
+Prices, products and assistance programs come from Google Search grounding. A link is kept only if it
+matches a search result or a live page check passes (a 404 means it was invented). Program phone
+numbers and "free" claims are kept only if the program's own page shows them.
+
+We haven't run the labelled eval (`npm run eval`) on a full set of staged walkthroughs yet, so there
+are no accuracy numbers here.
 
 ## Google services used
 
 | Service | What it does in Steady |
 |---|---|
-| Gemini video understanding + structured output (Vertex AI) | Finds hazards in uploads and public YouTube videos, with timestamps, evidence and a Zod-validated response schema |
-| Gemini multi-pass verification | A second, independent pass re-watches the video and must confirm each finding; unconfirmed findings are dropped |
-| Gemini frame-level image checks | Real frames around each timestamp (ffmpeg) are checked so the frame shown is the one that proves the finding |
-| Grounding with Google Search | Current price ranges and verified product links for each fix, and local **assistance programs** (each URL checked against search results or a live page; phones and "free" claims kept only if the program's page shows them) |
-| Places API (New) | Geocodes the home once and finds independent local businesses within 25 miles for each pro fix |
-| Gemini Omni Flash | Edits an 8-second clip of the user's room to show the fix installed (before/after) |
-| Gemini TTS | Reads the Simple plan aloud in 6 languages (calm "Kore" voice, captions on screen) |
-| YouTube IFrame Player API | Embedded, seekable player for YouTube reports |
-| Cloud Run | Hosting |
+| Gemini video understanding + structured output (Vertex AI) | Finds hazards with timestamps and evidence; responses are schema-constrained and validated with Zod |
+| Gemini multi-pass verification | A second, independent pass must confirm each finding in the video |
+| Gemini frame-level image checks | Frames around each timestamp are checked so the frame shown is the one that proves the finding |
+| Grounding with Google Search | Price ranges, verified product links and local assistance programs |
+| Places API (New) | Geocodes the home once; finds independent local businesses within 25 miles |
+| Gemini TTS | Reads the Simple plan aloud in six languages, with captions on screen |
 
-## Configuration
+## Setup (Mac)
 
-In `.env.local` (see `.env.example`). Never commit keys.
+```bash
+cd ~/Documents/Steady
+npm install
+cp .env.example .env.local        # then fill in the values below
+gcloud auth application-default login
+gcloud auth application-default set-quota-project steady-devfest
+npm run dev
+```
+
+Open http://localhost:3000.
+
+`.env.local` (never commit keys):
 
 - `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`: Vertex AI via Application Default Credentials.
-- `GOOGLE_MAPS_API_KEY`: Places API (New) for local help and a street-free city/ZIP label.
-- `GEMINI_API_KEY` (optional): YouTube links, and the TTS fallback if the TTS model isn't on Vertex.
-- `TTS_MODEL` (optional): defaults to `gemini-3.8-flash-tts`.
+- `GOOGLE_MAPS_API_KEY`: Places API (New) for local help.
+- `GEMINI_API_KEY` (optional): TTS fallback if the TTS model isn't on Vertex.
+
+## Demo safety net
+
+Every analysis, price, program and local result is saved in `data/results/`. Re-opening
+`/report/<id>` loads it from disk with no API calls, so run the demo video through once before presenting.
 
 ## Privacy
 
-The ZIP code or address is used only to search for help nearby. Prompts and the shared plan page use the
-city/ZIP only, never a street address. The shared page shows no video.
-
-## Generating the "after" clips (costs money)
-
-Omni Flash is off by default. To make demo clips:
-
-1. Set `ENABLE_OMNI=true` in `.env.local` and restart `npm run dev`.
-2. Click "Show this room with the fix" on the hazards you want in the demo.
-3. Set `ENABLE_OMNI=false` again. Clips are cached in `data/clips/` and reused.
-
-The app stops after `OMNI_MAX_CALLS` (default 10). Film rooms with **no people in the shot**:
-Omni Flash won't edit videos of recognizable people.
-
-If Vertex returns an error for Omni Flash, create an API key in Google AI Studio for the
-`steady-devfest` project and set `GEMINI_API_KEY` in `.env.local`.
+The ZIP code is used only to search for help nearby. Prompts and the shared plan page use city and ZIP
+only, never a street address. The shared page shows no video.
 
 ## Eval on real walkthroughs
 
@@ -87,8 +87,3 @@ If Vertex returns an error for Omni Flash, create an API key in Google AI Studio
 2. Film 20–45 s clips into `eval/` with no people in them.
 3. Copy `eval/labels.example.csv` to `eval/labels.csv`: one row per staged hazard.
 4. `npm run eval` prints how many staged hazards were caught and how many extra findings appeared.
-
-## Demo safety net
-
-Every analysis is saved in `data/results/`. Re-opening `/report/<id>` loads it instantly
-with no API calls, so run the demo video through once before presenting.

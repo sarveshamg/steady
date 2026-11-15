@@ -35,13 +35,13 @@ export default async function SharedPlanPage({ params }: { params: Promise<{ id:
   };
 
   return (
-    <div className="space-y-6">
-      <div className="mx-auto max-w-3xl">
-        <p className="text-lg font-semibold uppercase tracking-wider text-sage">Shared home safety plan</p>
-        <h1 className="text-3xl font-bold">What to fix, and who can help</h1>
-        <p className="mt-2 text-lg text-muted">
-          One simple plan from a walkthrough video: what you can fix today for free, what&apos;s cheap, and who will
-          help pay for (or even do) the rest.{area ? ` For a home near ${area}.` : ""}
+    <div className="space-y-8">
+      <div className="mx-auto max-w-3xl space-y-3">
+        <p className="font-semibold text-primary">Shared plan</p>
+        <h1 className="text-2xl sm:text-3xl">What to fix, and who can help</h1>
+        <p className="text-lg text-muted">
+          What you can fix today for free, what&apos;s cheap, and who will help pay for the rest.
+          {area ? ` For a home near ${area}.` : ""}
         </p>
       </div>
       <SimplePlan report={shared} readOnly />

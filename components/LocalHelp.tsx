@@ -2,28 +2,14 @@
 
 import { useEffect, useState } from "react";
 import type { Hazard, LocalHelp as LocalHelpT } from "@/lib/schema";
-
-function Stars({ rating }: { rating: number }) {
-  const full = Math.round(rating);
-  return (
-    <span aria-label={`${rating.toFixed(1)} out of 5 stars`} className="text-soon">
-      {"★".repeat(full)}
-      <span className="text-line">{"★".repeat(5 - full)}</span>
-    </span>
-  );
-}
-
-/** "0.4 mi", "3.2 mi", "12 mi": one decimal close by, whole miles beyond 10. */
-function fmtMiles(mi: number): string {
-  if (mi < 0.1) return "< 0.1 mi";
-  return `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi`;
-}
+import { Button, ButtonLink, Panel, Tag, TextInput, fmtMiles, postJson } from "./ui";
+import { ExternalIcon, PhoneIcon } from "./icons";
 
 const LABEL: Record<string, string> = {
   "hardware store": "Hardware stores",
   electrician: "Electricians",
   plumber: "Plumbers",
-  "aging in place contractor grab bar installation": "Aging-in-place & grab bar installers",
+  "aging in place contractor grab bar installation": "Grab bar installers",
   "handrail installation contractor": "Handrail installers",
   "general contractor": "General contractors",
   "flooring contractor": "Flooring contractors",
@@ -50,17 +36,15 @@ export function LocalHelp(props: {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/local", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: reportId, hazardId: h.id, location: loc }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Couldn't load local businesses");
+      const json = await postJson<LocalHelpT>(
+        "/api/local",
+        { id: reportId, hazardId: h.id, location: loc },
+        "Couldn't load local businesses. Try again in a minute.",
+      );
       if (loc) props.onLocation(loc);
-      props.onLoaded(json as LocalHelpT);
+      props.onLoaded(json);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load local businesses");
+      setError(e instanceof Error ? e.message : "Couldn't load local businesses. Try again in a minute.");
     } finally {
       setLoading(false);
     }
@@ -72,96 +56,101 @@ export function LocalHelp(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location, h.id, cached]);
 
+  const inputId = `local-zip-${h.id}`;
   return (
-    <div className="rounded-2xl bg-card p-4 ring-1 ring-line">
+    <Panel as="section" aria-labelledby={`local-title-${h.id}`} data-reveal-item className="space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Local help near you</p>
-        {cached && <p className="text-xs text-muted">{LABEL[cached.looking_for] ?? cached.looking_for}</p>}
+        <h3 id={`local-title-${h.id}`} className="text-xl">
+          Local help
+        </h3>
+        {cached && <p className="text-sm text-muted">{LABEL[cached.looking_for] ?? cached.looking_for}</p>}
       </div>
 
       {!location ? (
         <form
-          className="mt-2 flex flex-col gap-2 sm:flex-row"
+          className="space-y-2"
           onSubmit={(e) => {
             e.preventDefault();
             if (draft.trim()) load(draft.trim());
           }}
         >
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="ZIP code or address"
-            maxLength={200}
-            className="min-w-0 flex-1 rounded-full border border-line bg-paper px-4 py-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={!draft.trim() || loading}
-            className="rounded-full bg-sage px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            {loading ? "Searching…" : "Find local help"}
-          </button>
+          <label htmlFor={inputId} className="block">
+            Add a ZIP code to see businesses nearby.
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <TextInput
+              id={inputId}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="95064"
+              autoComplete="postal-code"
+              maxLength={200}
+              className="min-w-0 flex-1"
+            />
+            <Button type="submit" variant="secondary" disabled={!draft.trim() || loading}>
+              {loading ? "Searching…" : "Find local help"}
+            </Button>
+          </div>
         </form>
       ) : loading && !cached ? (
-        <p className="mt-2 text-sm text-muted">Finding businesses near {location}…</p>
+        <p className="text-muted" role="status">
+          Finding businesses near {location}…
+        </p>
       ) : cached && cached.places.length > 0 ? (
         <>
-        {cached.farther && (
-          <p className="mt-2 rounded-xl bg-paper px-3 py-2 text-sm text-muted ring-1 ring-line">
-            Nothing found within 25 miles of {location}. These are the nearest, farther away.
-          </p>
-        )}
-        <ul className="mt-2 divide-y divide-line">
-          {cached.places.map((p) => (
-            <li key={`${p.name}-${p.address}`} className="py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">{p.name}</span>
-                {!p.is_chain && (
-                  <span className="rounded-full bg-sage-soft px-2 py-0.5 text-xs font-semibold text-sage">
-                    Local business
-                  </span>
-                )}
-                {typeof p.distance_mi === "number" && (
-                  <span className="text-sm text-muted">{fmtMiles(p.distance_mi)} away</span>
-                )}
-              </div>
-              {typeof p.rating === "number" && (
-                <p className="text-sm">
-                  <Stars rating={p.rating} /> <span className="font-medium">{p.rating.toFixed(1)}</span>
-                  {typeof p.reviews === "number" && <span className="text-muted"> ({p.reviews.toLocaleString()} reviews)</span>}
+          {cached.farther && <p className="text-muted">Nothing within 25 miles. These are the nearest.</p>}
+          <ul className="divide-y divide-line">
+            {cached.places.map((p) => (
+              <li key={`${p.name}-${p.address}`} className="space-y-1 py-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-semibold">{p.name}</span>
+                  {!p.is_chain && <Tag tone="info">Local business</Tag>}
+                </div>
+                <p className="text-sm text-muted tabular-nums">
+                  {[
+                    typeof p.distance_mi === "number" ? `${fmtMiles(p.distance_mi)} away` : null,
+                    typeof p.rating === "number"
+                      ? `${p.rating.toFixed(1)} stars${typeof p.reviews === "number" ? ` (${p.reviews.toLocaleString()})` : ""}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
                 </p>
-              )}
-              {p.address && <p className="text-sm text-muted">{p.address}</p>}
-              <div className="mt-1 flex flex-wrap gap-3 text-sm">
-                {p.phone && (
-                  <a href={`tel:${p.phone.replace(/[^\d+]/g, "")}`} className="text-sage underline">
-                    {p.phone}
-                  </a>
-                )}
-                {p.website && (
-                  <a href={p.website} target="_blank" rel="noreferrer" className="text-sage underline">
-                    Website
-                  </a>
-                )}
-                {p.maps_url && (
-                  <a href={p.maps_url} target="_blank" rel="noreferrer" className="text-sage underline">
-                    View on Google Maps
-                  </a>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+                {p.address && <p className="text-sm text-muted">{p.address}</p>}
+                <div className="-ml-2 flex flex-wrap gap-x-2">
+                  {p.phone && (
+                    <ButtonLink href={`tel:${p.phone.replace(/[^\d+]/g, "")}`} variant="ghost" className="whitespace-nowrap tabular-nums">
+                      <PhoneIcon className="h-[18px] w-[18px]" />
+                      {p.phone}
+                    </ButtonLink>
+                  )}
+                  {p.website && (
+                    <ButtonLink href={p.website} external variant="ghost" aria-label={`${p.name} website (opens in a new tab)`}>
+                      Website
+                      <ExternalIcon className="h-4 w-4" />
+                    </ButtonLink>
+                  )}
+                  {p.maps_url && (
+                    <ButtonLink href={p.maps_url} external variant="ghost" aria-label={`${p.name} on Google Maps (opens in a new tab)`}>
+                      Google Maps
+                      <ExternalIcon className="h-4 w-4" />
+                    </ButtonLink>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         </>
       ) : cached ? (
-        <p className="mt-2 text-sm text-muted">No matching businesses found near {location}.</p>
+        <p className="text-muted">No matching businesses nearby.</p>
       ) : null}
 
-      {error && <p className="mt-2 text-sm text-urgent">{error}</p>}
-      <p className="mt-2 text-xs text-muted">
-        Business info from Google Maps. Independent local businesses are listed first. Steady doesn&apos;t endorse or
-        get paid by any business.
-      </p>
-    </div>
+      {error && (
+        <p className="font-medium text-urgent" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="text-sm text-muted">Business info from Google Maps. Independent businesses first. Steady isn&apos;t paid by any business.</p>
+    </Panel>
   );
 }

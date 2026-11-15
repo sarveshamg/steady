@@ -1,34 +1,281 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #1c2420;
-  --color-muted: #5b6660;
-  --color-paper: #f7f5f0;
-  --color-card: #ffffff;
-  --color-line: #e3dfd6;
-  --color-sage: #2f6b4f;
-  --color-sage-soft: #e3efe7;
-  --color-urgent: #b4352a;
-  --color-urgent-soft: #f8e4e1;
-  --color-soon: #b9770e;
-  --color-soon-soft: #fbefd9;
-  --color-nice: #4a6fa5;
-  --color-nice-soft: #e4ebf5;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Calm civic palette, light mode, WCAG AA. Contrast: muted 5.5:1 on page, 6.0:1 on surface; primary 5.9:1 on
+     surface; tag pairs urgent 6.1, soon 5.2, nice 7.0, success 5.4. */
+  --color-page: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-ink: #14213d;
+  --color-muted: #5b6475;
+  --color-line: #e3e6eb;
+  --color-line-strong: #c9ced6;
+  --color-primary: #2a5bd7;
+  --color-primary-hover: #2149b3;
+  --color-primary-pressed: #1b3c94;
+  --color-on-primary: #ffffff;
+  --color-primary-soft: #eef3fd;
+  --color-urgent: #b42318;
+  --color-urgent-soft: #fef3f2;
+  --color-soon: #b54708;
+  --color-soon-soft: #fffaeb;
+  --color-nice: #475467;
+  --color-nice-soft: #f2f4f7;
+  --color-success: #067647;
+  --color-success-soft: #ecfdf3;
+
+  /* 6px tags, 8px inputs and buttons, 10px panels */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  /* One elevation token: hovered cards and floating elements only. */
+  --shadow-float: 0 1px 2px rgba(20, 33, 61, 0.06), 0 4px 12px rgba(20, 33, 61, 0.06);
+
+  /* Type scale 14 / 16 / 18 / 22 / 28 / 36 */
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.6;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 1.2;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 1.15;
+
+  /* Set by next/font in app/layout.tsx */
+  --font-sans: var(--font-public-sans), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Motion: transform and opacity only, nothing longer than 400ms. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur: 240ms;
+  --dur-slow: 400ms;
 }
 
-html, body {
-  background: var(--color-paper);
+html {
+  color-scheme: light;
+  scroll-behavior: smooth; /* "Check a home" / "See how it works" anchors; off under reduced motion */
+}
+
+html,
+body {
+  background: var(--color-page);
   color: var(--color-ink);
 }
 
 body {
   font-size: 17px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
-:focus-visible {
-  outline: 3px solid var(--color-sage);
-  outline-offset: 2px;
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+/* Focus: 1px primary border + 3px primary ring at 35%. The transparent outline keeps a visible indicator in
+   Windows high-contrast mode. */
+/* In the base layer so a component can swap in its own ring with a utility (e.g. the report tabs). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    box-shadow:
+      0 0 0 1px var(--color-primary),
+      0 0 0 4px rgb(42 91 215 / 0.35);
+  }
+}
+
+/* Inputs are always white so they lift off the page ground. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+textarea,
+select {
+  background-color: var(--color-surface);
+}
+
+/* ---------- Motion ---------- */
+
+/* Pressable things shrink slightly while pressed. */
+.press {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.press:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Cards and finding rows lift on hover. */
+.lift {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-float);
+}
+
+/* Content swaps (tab panels, finding detail, menus): fade + 6–8px rise. */
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-y, 8px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.enter {
+  animation: enter var(--dur) var(--ease-out) both;
+}
+.enter-tab {
+  --enter-y: 6px;
+  animation: enter var(--dur) var(--ease-out) both;
+}
+
+/* Scroll reveal (hooks/useReveal.ts). The hidden state is only applied after JS mounts, so content is
+   visible if scripts fail. */
+[data-reveal="pending"] {
+  opacity: 0;
+  transform: translateY(12px);
+}
+[data-reveal="shown"] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+/* Success checkbox: custom box, check mark scales in. */
+.check {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1.5px solid var(--color-line-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.check:hover:not(:disabled) {
+  border-color: var(--color-success);
+}
+.check::after {
+  content: "";
+  width: 0.8rem;
+  height: 0.8rem;
+  background: var(--color-on-primary);
+  clip-path: polygon(14% 44%, 0 65%, 40% 100%, 100% 22%, 84% 6%, 38% 68%);
+  transform: scale(0);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.check:checked {
+  background: var(--color-success);
+  border-color: var(--color-success);
+}
+.check:checked::after {
+  transform: scale(1);
+}
+.check:disabled {
+  cursor: default;
+}
+
+/* Landing hero entrance (CSS only, so it runs without JS). Delays are set inline per element. */
+@keyframes hero-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes hero-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes hero-chip {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.hero-in {
+  animation: hero-up 600ms var(--ease-out) both;
+}
+.hero-photo {
+  animation: hero-scale 600ms var(--ease-out) 120ms both;
+}
+.hero-chip {
+  animation: hero-chip 400ms var(--ease-out) 400ms both;
+}
+
+/* Text on top of video frames */
+.frame-overlay {
+  background: linear-gradient(to top, rgba(20, 33, 61, 0.72), rgba(20, 33, 61, 0) 60%);
+}
+/* Narrow screens: titles wrap to more lines, so the gradient reaches higher. */
+@media (max-width: 639px) {
+  .frame-overlay-tall {
+    background: linear-gradient(to top, rgba(20, 33, 61, 0.8), rgba(20, 33, 61, 0) 90%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .lift:hover,
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+  [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .check::after {
+    transform: scale(0);
+  }
+  .check:checked::after {
+    transform: scale(1);
+  }
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { buttonClass, inputClass, postJson } from "./ui";
+import { PlayIcon, SpinnerIcon } from "./icons";
 
 const LANGS = [
   { code: "en", label: "English" },
@@ -22,36 +24,34 @@ export function ListenCard({ reportId }: { reportId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/listen", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: reportId, lang }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Couldn't prepare the audio.");
+      const json = await postJson<{ audioUrl: string; script: string }>(
+        "/api/listen",
+        { id: reportId, lang },
+        "Couldn't prepare the audio. Everything is on screen below.",
+      );
       setResult({ ...json, lang });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't prepare the audio.");
+      setError(e instanceof Error ? e.message : "Couldn't prepare the audio. Everything is on screen below.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <section aria-labelledby="listen-title" className="space-y-4 rounded-3xl bg-card p-5 text-lg ring-1 ring-line">
-      <h2 id="listen-title" className="text-2xl font-bold">
+    <section aria-labelledby="listen-title" className="space-y-4">
+      <h2 id="listen-title" className="text-xl">
         Listen to this plan
       </h2>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="listen-lang" className="font-semibold">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <label htmlFor="listen-lang" className="block text-lg">
             Language
           </label>
           <select
             id="listen-lang"
             value={lang}
             onChange={(e) => setLang(e.target.value as typeof lang)}
-            className="min-h-12 rounded-full border-2 border-line bg-card px-4 text-lg"
+            className={`${inputClass} min-h-12 w-auto pr-8 text-lg`}
           >
             {LANGS.map((l) => (
               <option key={l.code} value={l.code} lang={l.code}>
@@ -60,30 +60,27 @@ export function ListenCard({ reportId }: { reportId: string }) {
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          onClick={listen}
-          disabled={loading}
-          aria-busy={loading}
-          className="inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-ink px-8 text-xl font-semibold text-white disabled:opacity-60"
-        >
-          <span aria-hidden>{loading ? "⏳" : "▶"}</span>
+        <button type="button" onClick={listen} disabled={loading} aria-busy={loading} className={buttonClass("primary", "lg")}>
+          {loading ? <SpinnerIcon className="h-5 w-5" /> : <PlayIcon className="h-5 w-5" />}
           {loading ? "Preparing audio…" : "Listen"}
         </button>
       </div>
       <p className="sr-only" role="status">
         {loading ? "Preparing audio. This can take up to a minute." : result ? "Audio ready." : ""}
       </p>
-      {error && <p className="text-urgent">{error}</p>}
+      {error && (
+        <p className="text-lg font-medium text-urgent" role="alert">
+          {error}
+        </p>
+      )}
       {result && (
         <div className="space-y-3">
           {/* Captions: the full script is shown as text right below the player. */}
           <audio key={result.audioUrl} controls autoPlay src={result.audioUrl} className="w-full" aria-label="Plan read aloud" />
-          <div className="rounded-2xl bg-paper p-4 ring-1 ring-line" lang={result.lang}>
-            <p className="mb-1 text-lg font-semibold uppercase tracking-wide text-muted">What it says</p>
-            <p className="whitespace-pre-line text-lg leading-relaxed">{result.script}</p>
-          </div>
-          <p className="text-lg text-muted">Voice made with AI (Gemini text-to-speech).</p>
+          <p className="whitespace-pre-line rounded-md bg-page px-4 py-3 text-lg" lang={result.lang}>
+            {result.script}
+          </p>
+          <p className="text-lg text-muted">AI voice (Gemini text-to-speech).</p>
         </div>
       )}
     </section>

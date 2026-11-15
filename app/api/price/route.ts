@@ -23,6 +23,6 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error(err);
     await logError("price", err);
-    return NextResponse.json({ error: `Pricing failed: ${String(err)}` }, { status: 500 });
+    return NextResponse.json({ error: "Couldn't get a price right now. Try again in a minute." }, { status: 500 });
   }
 }

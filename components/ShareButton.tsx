@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { ShareIcon } from "./icons";
+import { Button } from "./ui";
 
 /** Share the read-only plan link: Web Share API where available, else copy the link and show a toast. */
 export function ShareButton({ reportId }: { reportId: string }) {
@@ -16,7 +18,7 @@ export function ShareButton({ reportId }: { reportId: string }) {
     const title = "Home safety plan";
     try {
       if (typeof navigator.share === "function") {
-        await navigator.share({ title, text: "Here's the simple home safety plan from Steady.", url });
+        await navigator.share({ title, text: "Here's the home safety plan from Steady.", url });
         return;
       }
     } catch (e) {
@@ -32,15 +34,14 @@ export function ShareButton({ reportId }: { reportId: string }) {
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={share}
-        className="inline-flex min-h-12 items-center justify-center rounded-full bg-sage px-6 text-lg font-semibold text-white"
-      >
+      <Button variant="secondary" size="lg" onClick={share}>
+        <ShareIcon />
         Share this plan
-      </button>
+      </Button>
       <div aria-live="polite" className="absolute right-0 top-full z-10 mt-2">
-        {toast && <p className="whitespace-nowrap rounded-full bg-ink px-4 py-2 text-lg text-white shadow">{toast}</p>}
+        {toast && (
+          <p className="whitespace-nowrap rounded-md border border-line bg-surface px-4 py-2 text-lg shadow-float">{toast}</p>
+        )}
       </div>
     </div>
   );

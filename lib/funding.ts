@@ -149,9 +149,17 @@ async function verify(
   grounded: Set<string>,
   confidentIds: Set<string>,
 ): Promise<FundingProgram | null> {
+  let raw = c.url.trim();
+  // The model sometimes copies Google's temporary grounding redirect instead of the real page: resolve it, or drop
+  // the program (those links expire, and they'd hide whether the destination is an official site).
+  if (/^https?:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\//i.test(raw)) {
+    const resolved = await resolveRedirect(raw);
+    if (resolved === raw) return null;
+    raw = resolved;
+  }
   let url: URL;
   try {
-    url = new URL(c.url.trim());
+    url = new URL(raw);
   } catch {
     return null;
   }

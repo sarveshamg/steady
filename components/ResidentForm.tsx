@@ -1,6 +1,7 @@
 "use client";
 
 import type { Resident } from "@/lib/schema";
+import { SegmentedControl, TextArea, ToggleChip } from "./ui";
 
 export const DEFAULT_RESIDENT: Resident = {
   mobility: "none",
@@ -26,79 +27,51 @@ export function describeResident(r: Resident | null | undefined): string {
   if (r.night_bathroom) parts.push("up at night");
   if (r.fell_recently) parts.push("fell in the past year");
   if (r.other_needs?.trim()) parts.push(`“${r.other_needs.trim().slice(0, 60)}${r.other_needs.trim().length > 60 ? "…" : ""}”`);
-  return parts.length ? parts.join(" · ") : "Walks on their own";
+  if (!parts.length) return "Walks on their own";
+  const text = parts.join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function Toggle(props: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+export function ResidentForm({
+  value,
+  onChange,
+  hideLegend = false,
+}: {
+  value: Resident;
+  onChange: (r: Resident) => void;
+  /** When a visible heading already says "Who lives here", keep the legend for screen readers only. */
+  hideLegend?: boolean;
+}) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={props.checked}
-      onClick={() => props.onChange(!props.checked)}
-      className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-        props.checked ? "border-sage bg-sage text-white" : "border-line bg-card hover:border-ink/30"
-      }`}
-    >
-      {props.checked ? "✓ " : ""}
-      {props.label}
-    </button>
-  );
-}
-
-export function ResidentForm({ value, onChange }: { value: Resident; onChange: (r: Resident) => void }) {
-  return (
-    <fieldset className="space-y-3">
-      <legend className="mb-1 text-sm font-semibold">Who lives here?</legend>
-      <div>
-        <p className="mb-2 text-xs text-muted">Getting around</p>
-        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Getting around">
-          {MOBILITY.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={value.mobility === m.value}
-              onClick={() => onChange({ ...value, mobility: m.value })}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                value.mobility === m.value ? "border-sage bg-sage text-white" : "border-line bg-card hover:border-ink/30"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <p className="mb-2 text-xs text-muted">Anything else? Tap all that apply</p>
+    <fieldset className="space-y-6">
+      <legend className={hideLegend ? "sr-only" : "mb-1 text-xl font-semibold"}>Who lives here?</legend>
+      <SegmentedControl
+        label="Getting around"
+        labelId="mobility-label"
+        options={MOBILITY}
+        value={value.mobility}
+        onChange={(mobility) => onChange({ ...value, mobility })}
+      />
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-muted">Anything else? Tap any that apply</p>
         <div className="flex flex-wrap gap-2">
-          <Toggle label="Low vision" checked={value.low_vision} onChange={(v) => onChange({ ...value, low_vision: v })} />
-          <Toggle
-            label="Gets up at night"
-            checked={value.night_bathroom}
-            onChange={(v) => onChange({ ...value, night_bathroom: v })}
-          />
-          <Toggle
-            label="Fell in the past year"
-            checked={value.fell_recently}
-            onChange={(v) => onChange({ ...value, fell_recently: v })}
-          />
+          <ToggleChip label="Low vision" checked={value.low_vision} onChange={(v) => onChange({ ...value, low_vision: v })} />
+          <ToggleChip label="Up at night" checked={value.night_bathroom} onChange={(v) => onChange({ ...value, night_bathroom: v })} />
+          <ToggleChip label="Fell in the past year" checked={value.fell_recently} onChange={(v) => onChange({ ...value, fell_recently: v })} />
         </div>
       </div>
-      <div>
-        <label htmlFor="other-needs" className="mb-2 block text-xs text-muted">
-          Any other needs? (optional)
+      <div className="space-y-2">
+        <label htmlFor="other-needs" className="block text-sm font-semibold text-muted">
+          Other needs (optional)
         </label>
-        <textarea
+        <TextArea
           id="other-needs"
           rows={2}
           maxLength={400}
           value={value.other_needs ?? ""}
           onChange={(e) => onChange({ ...value, other_needs: e.target.value })}
-          placeholder="e.g. hard of hearing, arthritis in her hands, gets dizzy when standing up, uses oxygen tubing"
-          className="w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm"
+          placeholder="For example: arthritis in her hands, dizzy when standing up"
         />
-        <p className="mt-1 text-right text-xs text-muted">{(value.other_needs ?? "").length}/400</p>
       </div>
     </fieldset>
   );

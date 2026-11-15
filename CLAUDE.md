@@ -26,6 +26,28 @@ Target tracks: Best Social Impact (primary), Best Integration of Gemini / Google
    labelled "AI visualization".
 5. Keep it one polished flow. Don't add features before the current flow works end to end.
 
+## Visual system (app/globals.css + components/ui/)
+
+Calm civic look: cool gray page (`page`), white panels (`surface`), navy text (`ink`), one blue (`primary`).
+Status colours only on tags: `urgent`, `soon`, `nice`, `success` (each with a `-soft` background, all ≥5:1).
+Radius 10px panels, 8px inputs/buttons, 6px tags. No shadows except `shadow-float` on toasts. Public Sans,
+body 17px / 1.6, scale 14/16/18/22/28/36, sentence case only (no all-caps labels), tabular-nums for money,
+times and distances. Focus: 1px primary + 3px primary ring at 35%. Simple plan text is ≥18px.
+Build UI from components/ui: Button/ButtonLink (primary, secondary, ghost; disabled = surface + line + muted
+text, always with a one-line hint), Tag, Panel/Eyebrow, Field/TextInput/TextArea, SegmentedControl, ToggleChip,
+ProgressBar, EmptyState. Formatting helpers (fmtMoney, fmtTime, postJson…) live in components/ui/format.ts.
+Icons: components/icons.tsx (lucide-style, 1.75 stroke, 20px). Logo: public/logo.svg, logo-mark.svg (navy
+house, blue steps; Public Sans Bold converted to outlines).
+
+Layout: group content in Panels (24px padding, 16px on mobile); never nest panels, use row dividers. Spacing only
+from 4/8/12/16/24/32/48/64 (Tailwind 1/2/3/4/6/8/12/16). Font via next/font (Public Sans) in app/layout.tsx.
+Imagery: real video frames (/api/frame/<id>?t=) as row thumbnails (96×72) and the detail hero; text on a frame sits
+on `.frame-overlay`. Upload empty state: components/StairsIllustration.tsx.
+Motion (CSS + hooks/useReveal.ts, transform/opacity only, ≤400ms): `.press` (scale .98 while pressed), `.lift`
+(hover shadow + 1px rise), `.enter` / `.enter-tab` (fade + rise on content swaps), sliding tab bar, `.check`
+(success checkbox, check scales in), ProgressBar uses scaleX. useReveal sets data-reveal="pending" only after
+mount and only below the fold, so content shows without JS; reduced motion disables all of it.
+
 ## Architecture
 
 ```

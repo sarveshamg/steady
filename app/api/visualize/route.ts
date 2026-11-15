@@ -37,6 +37,12 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error(err);
     await logError("visualize", err);
-    return NextResponse.json({ error: String(err instanceof Error ? err.message : err) }, { status: 500 });
+    const msg = String(err instanceof Error ? err.message : err);
+    const error = /turned off|limit reached/i.test(msg)
+      ? "Before/after views are turned off right now."
+      : /no video|safety filter/i.test(msg)
+        ? "This clip couldn't be edited. Try another finding."
+        : "Couldn't make the before/after view. Try again in a minute.";
+    return NextResponse.json({ error }, { status: 500 });
   }
 }
